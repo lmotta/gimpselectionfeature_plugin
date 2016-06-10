@@ -1,0 +1,23 @@
+[general]
+name=Gimp Selection Feature
+description=Plugin for adding  selected area in GIMP how a feature in memory layer
+about=This plugin create a memory layer, where, yours feature can come from selected area in GIMP.
+  See presentation in ??
+  This plugin is developed on the demand of IBAMA(Brazilian Institute of Environment and Renewable Natural Resources)
+  http://www.ibama.gov.br
+
+version=0.1
+qgisMinimumVersion=2.14
+# category=
+author=Luiz Motta
+email=motta.luiz@gmail.com
+
+changelog=0.1
+  - Start of plugin
+tags=GIMP,raster, selection,IBAMA
+homepage=https://github.com/lmotta/???
+tracker=http://hub.qgis.org/projects/???
+repository=https://github.com/lmotta/???
+icon=gimpselectionfeature.svg
+experimental=True
+deprecated=False
