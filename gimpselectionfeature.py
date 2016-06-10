@@ -125,19 +125,19 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       feat.setAttribute('datetime', sdatetime )
       feat.setAttribute('crs', self.paramsImage['desc_crs'] )
 
-    def envelopGeoms(envelopFeats, geom):
+    def envelopGeoms(envFeats, geom):
       env = list( geom.GetEnvelope() ) #  [ xmin, xmax, ymin, ymax ]
-      if envelopFeats is None:
+      if envFeats is None:
         return env
 
       for id in ( 0, 2 ): # Min
-        if envelopeFeats[id] > env[id]:
-          envelopeFeats[id] = env[id]
+        if envFeats[id] > env[id]:
+          envFeats[id] = env[id]
       for id in ( 1, 3 ): # Max
-        if envelopeFeats[id] < env[id]:
-          envelopeFeats[id] = env[id]
+        if envFeats[id] < env[id]:
+          envFeats[id] = env[id]
 
-      return envelopGeoms
+      return envFeats
 
     vreturn = self.setInterfaceDBus()
     if not vreturn['isOk']:
@@ -175,7 +175,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
     if not isIniEditable:
       self.layerPolygon.startEditing()
 
-    envelopFeats = None # [ xmin, xmax, ymin, ymax ]
+    envFeats = None # [ xmin, xmax, ymin, ymax ]
     tolerance = 1 # Pixels ??
     totErrorGeom = 0
     for geom in vreturn['geoms']:
@@ -188,7 +188,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
         continue
       geom.Destroy()
       geomSmoot.TransformTo( srsLayerPolygon )
-      envelopFeats = envelopGeoms( envelopFeats, geomSmoot )
+      envFeats = envelopGeoms( envFeats, geomSmoot )
       geomLayer = QgsCore.QgsGeometry.fromWkt( geomSmoot.ExportToWkt() )
       geomSmoot.Destroy()
       feat.setGeometry( geomLayer )
@@ -207,7 +207,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       msg = "Added %d features in '%s' (%d selection with missing geoemtry)" % ( totalFeats, self.layerPolygon.name() )
       typMsg = QgsGui.QgsMessageBar.WARNING
     self.messageStatus.emit( { 'type': typMsg, 'msg': msg  } )
-    bboxFeats = QgsCore.QgsRectangle( envelopFeats[0], envelopFeats[2], envelopFeats[1], envelopFeats[3] )
+    bboxFeats = QgsCore.QgsRectangle( envFeats[0], envFeats[2], envFeats[1], envFeats[3] )
     self.finished.emit( { 'isOk': True, 'bboxFeats': bboxFeats } )
 
   def addImageGimp(self):
