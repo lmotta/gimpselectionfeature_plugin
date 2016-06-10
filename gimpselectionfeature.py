@@ -95,14 +95,12 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
         return { 'isOk': False, 'msg': gdal.GetLastErrorMsg() }
       band = ds_img.GetRasterBand( 1 )
 
-      filename = "%s.geojson" % path.splitext( pImgSel['filename'] )[0]
-      drv = ogr.GetDriverByName("GeoJSON")
-      if path.exists( filename ):
-        drv.DeleteDataSource( filename )
-      ds_json = drv.CreateDataSource( filename )
+      # Memory layer - Polygonize
       srs = osr.SpatialReference()
       srs.ImportFromWkt( self.paramsImage['wktProj'] )
-      layer = ds_json.CreateLayer( "polygonize" , srs=srs )
+      drv = ogr.GetDriverByName('MEMORY')
+      ds = drv.CreateDataSource('memData')
+      layer = ds.CreateLayer( 'memLayer', srs, ogr.wkbPolygon )
       field = ogr.FieldDefn("dn", ogr.OFTInteger)
       layer.CreateField( field )
       idField = 0
@@ -112,10 +110,14 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
         return { 'isOk': False, 'msg': gdal.GetLastErrorMsg() }
 
       ds_img = band = None
-      ds_json.Destroy()
-      ds_json = None
-      #
-      return { 'isOk': True, 'filename':filename }
+
+      # Get Geoms
+      geoms = []
+      layer.SetAttributeFilter("dn = 255")
+      for feat in layer:
+        geoms.append( feat.GetGeometryRef().Clone() )
+
+      return { 'isOk': True, 'geoms': geoms }
 
     def addAttribute(feat):
       sdatetime = datetime.datetime.now().strftime( "%Y-%m-%d %H:%M:%s")
@@ -123,26 +125,19 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       feat.setAttribute('datetime', sdatetime )
       feat.setAttribute('crs', self.paramsImage['desc_crs'] )
 
-    def unionBBoxFeats(bboxFeats, geom):
-      bbox = geom.boundingBox()
-      xmin = bbox.xMinimum()
-      ymin = bbox.yMinimum()
-      xmax = bbox.xMaximum()
-      ymax = bbox.yMaximum()
-      del bbox
-      if bboxFeats is None:
-        bboxFeats = { 'xmin': xmin, 'ymin': ymin, 'xmax': xmax, 'ymax': ymax }
-      else:
-        if bboxFeats['xmin'] > xmin:
-          bboxFeats['xmin'] = xmin
-        if bboxFeats['ymin'] > ymin:
-          bboxFeats['ymin'] = ymin
-        if bboxFeats['xmax'] < xmax:
-          bboxFeats['xmax'] = xmax
-        if bboxFeats['ymax'] < ymax:
-          bboxFeats['ymax'] = ymax
+    def envelopGeoms(envelopFeats, geom):
+      env = list( geom.GetEnvelope() ) #  [ xmin, xmax, ymin, ymax ]
+      if envelopFeats is None:
+        return env
 
-      return bboxFeats
+      for id in ( 0, 2 ): # Min
+        if envelopeFeats[id] > env[id]:
+          envelopeFeats[id] = env[id]
+      for id in ( 1, 3 ): # Max
+        if envelopeFeats[id] < env[id]:
+          envelopeFeats[id] = env[id]
+
+      return envelopGeoms
 
     vreturn = self.setInterfaceDBus()
     if not vreturn['isOk']:
@@ -164,64 +159,55 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       self.finishedWarnig( vreturn['msg'] )
       return
 
-    with open( vreturn['filename'] ) as f:
-      data = json.load(f)
-    feats255 = filter( lambda item: item['properties']['dn'] == 255, data['features'] )
-    del data
-    totalFeats = len( feats255 )
-    if totalFeats == 0:
+    totalFeats = len( vreturn['geoms'] ) 
+    if totalFeats  == 0:
       msg = "Not found features in selections ('%s')" % self.paramsImage['filename']
       self.finishedWarnig( msg )
       return
 
+    srsLayerPolygon = osr.SpatialReference()
+    srsLayerPolygon.ImportFromWkt( self.layerPolygon.crs().toWkt() )
+
     feat = QgsCore.QgsFeature( self.layerPolygon.pendingFields() )
     addAttribute( feat )
-    #
-    crsImg = QgsCore.QgsCoordinateReferenceSystem()
-    crsImg.createFromString( self.paramsImage['wktProj'] )
-    ct = QgsCore.QgsCoordinateTransform( crsImg, self.layerPolygon.crs() )
-    #
+
     isIniEditable = self.layerPolygon.isEditable()
     if not isIniEditable:
       self.layerPolygon.startEditing()
-    #
-    bboxFeats = None
+
+    envelopFeats = None # [ xmin, xmax, ymin, ymax ]
     tolerance = 1 # Pixels ??
     totErrorGeom = 0
-    for id in xrange( totalFeats ):
-      geomGdal = ogr.CreateGeometryFromJson( json.dumps( feats255[id]['geometry'] ) )
-      if geomGdal is None:
-        totErrorGeom += 1
-        continue
+    for geom in vreturn['geoms']:
       #geomSmoot = geom.ConvexHull()
       #geomSmoot = geom.DelaunayTriangulation( tolerance ) # Not exist
-      geomSmootGdal = geomGdal.SimplifyPreserveTopology( tolerance )
-      if geomSmootGdal is None:
+      geomSmoot = geom.SimplifyPreserveTopology( tolerance )
+      if geomSmoot is None:
         totErrorGeom += 1
-        geomGdal.Destroy()
+        geom.Destroy()
         continue
-      geomGdal.Destroy()
-
-      geom = QgsCore.QgsGeometry.fromWkt( geomSmootGdal.ExportToWkt() )
-      geom.transform( ct )
-      feat.setGeometry( geom )
+      geom.Destroy()
+      geomSmoot.TransformTo( srsLayerPolygon )
+      envelopFeats = envelopGeoms( envelopFeats, geomSmoot )
+      geomLayer = QgsCore.QgsGeometry.fromWkt( geomSmoot.ExportToWkt() )
+      geomSmoot.Destroy()
+      feat.setGeometry( geomLayer )
       self.layerPolygon.addFeature( feat )
-      bboxFeats = unionBBoxFeats( bboxFeats, geom )
-      geomSmootGdal.Destroy()
-      del geom
+      del geomLayer
 
     feat = None
     self.layerPolygon.commitChanges()
     if isIniEditable:
       self.layerPolygon.startEditing()
     self.layerPolygon.updateExtents()
-    #
+
     msg = "Added %d features in '%s'" % ( totalFeats, self.layerPolygon.name() )
     typMsg = QgsGui.QgsMessageBar.INFO
     if totErrorGeom > 0:
       msg = "Added %d features in '%s' (%d selection with missing geoemtry)" % ( totalFeats, self.layerPolygon.name() )
       typMsg = QgsGui.QgsMessageBar.WARNING
     self.messageStatus.emit( { 'type': typMsg, 'msg': msg  } )
+    bboxFeats = QgsCore.QgsRectangle( envelopFeats[0], envelopFeats[2], envelopFeats[1], envelopFeats[3] )
     self.finished.emit( { 'isOk': True, 'bboxFeats': bboxFeats } )
 
   def addImageGimp(self):
@@ -332,7 +318,7 @@ class GimpSelectionFeature(QtCore.QObject):
 
   @QtCore.pyqtSlot(dict)
   def finishedWorker(self, data):
-    def zoomToBBox():
+    def zoomToBBox(bboxFeats):
       def highlight():
         def removeRB():
           rb.reset( True )
@@ -356,11 +342,7 @@ class GimpSelectionFeature(QtCore.QObject):
     if self.worker.isKilled: 
       self.thread.wait()
     if data['isOk'] and data.has_key('bboxFeats'):
-      bboxFeats = QgsCore.QgsRectangle( 
-        data['bboxFeats']['xmin'], data['bboxFeats']['ymin'],
-        data['bboxFeats']['xmax'], data['bboxFeats']['ymax']
-      )
-      zoomToBBox()
+      zoomToBBox( data['bboxFeats'] )
 
   @QtCore.pyqtSlot( dict )
   def messageStatusWorker(self, msgStatus):
@@ -420,8 +402,8 @@ class GimpSelectionFeature(QtCore.QObject):
       self.createLayerPolygon()
 
     self.worker.setDataRun( self.paramsImage, self.layerPolygon, 'addFeatures' )
-    #self.thread.start()
-    self.worker.addFeatures() # DEBUG
+    self.thread.start()
+    #self.worker.addFeatures() # DEBUG
 
     self.setEndProcess()
 
