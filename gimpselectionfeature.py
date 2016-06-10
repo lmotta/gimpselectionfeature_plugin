@@ -35,10 +35,11 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
     super(WorkerGimpSelectionFeature, self).__init__()
     self.isKilled = None
     self.runProcess = self.paramsImage = self.layerPolygon = None    
-    #
+
     ( self.session_bus, self.name_bus ) = ( session_bus, name_bus )
-    #
+
     self.idbus = self.proxyDBus = None
+    self.idAdd = 0
 
   def __del__(self):
     if not self.idbus is None:
@@ -120,10 +121,12 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       return { 'isOk': True, 'geoms': geoms }
 
     def addAttribute(feat):
+      self.idAdd += 1
       sdatetime = datetime.datetime.now().strftime( "%Y-%m-%d %H:%M:%s")
       feat.setAttribute('image', self.paramsImage['filename'] )
       feat.setAttribute('datetime', sdatetime )
       feat.setAttribute('crs', self.paramsImage['desc_crs'] )
+      feat.setAttribute('id_add', self.idAdd )
 
     def envelopGeoms(envFeats, geom):
       env = list( geom.GetEnvelope() ) #  [ xmin, xmax, ymin, ymax ]
@@ -251,7 +254,8 @@ class GimpSelectionFeature(QtCore.QObject):
     self._connect()
 
   def createLayerPolygon(self):
-    l_fields = map( lambda item: "field=%s" % item, [ "image:string(200)", "datetime:string(20)", "crs:string(100)" ] )
+    atts = [ "id_add:integer", "image:string(200)", "datetime:string(20)", "crs:string(100)" ]
+    l_fields = map( lambda item: "field=%s" % item, atts  )
     l_fields.insert( 0, "crs=epsg:4326" )
     l_fields.append( "index=yes" )
     s_fields = '&'.join( l_fields )
