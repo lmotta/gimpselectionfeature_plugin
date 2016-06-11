@@ -250,11 +250,7 @@ class GimpSelectionFeature(QtCore.QObject):
   def __init__(self, iface, dockWidgetGui):
     super(GimpSelectionFeature, self).__init__()
     self.dockWidgetGui = dockWidgetGui
-    self.setEnabledWidgetAdd( False )
-    dockWidgetGui['stopProcess'].setEnabled( False )
-
     self.paramsImage =  self.layerPolygon = self.thread = self.hasConnect = None
-
     self.nameModulus = "GimpSelectionFeature"
     ( self.iface, self.canvas,  self.msgBar ) = ( iface, iface.mapCanvas(), iface.messageBar() )
     self.session_bus = dbus.SessionBus()
@@ -264,6 +260,9 @@ class GimpSelectionFeature(QtCore.QObject):
 
     self.initThread()
     self._connect()
+
+    self.setEnabledWidgetAdd( False )
+    self.dockWidgetGui.stopProcess.setEnabled( False )
 
   def createLayerPolygon(self):
     atts = [ "id_add:integer", "image:string(200)", "datetime:string(20)", "crs:string(100)" ]
@@ -310,9 +309,9 @@ class GimpSelectionFeature(QtCore.QObject):
     ss = [
       { 'signal': self.canvas.currentLayerChanged, 'slot': self.setParamsImage },
       { 'signal': QgsCore.QgsMapLayerRegistry.instance().layerWillBeRemoved, 'slot': self.removeLayer },
-      { 'signal': self.dockWidgetGui['addFeatures'].clicked, 'slot': self.addFeature },
-      { 'signal': self.dockWidgetGui['addImageGimp'].clicked, 'slot': self.addImageGimp },
-      { 'signal': self.dockWidgetGui['stopProcess'].clicked, 'slot': self.stopProcess },
+      { 'signal': self.dockWidgetGui.addFeatures.clicked, 'slot': self.addFeature },
+      { 'signal': self.dockWidgetGui.addImageGimp.clicked, 'slot': self.addImageGimp },
+      { 'signal': self.dockWidgetGui.stopProcess.clicked, 'slot': self.stopProcess },
     ]
     if isConnect:
       self.hasConnect = True
@@ -324,13 +323,13 @@ class GimpSelectionFeature(QtCore.QObject):
         item['signal'].disconnect( item['slot'] )
 
   def setEnabledWidgetAdd( self, isEnabled ):
-    self.dockWidgetGui['addFeatures'].setEnabled( isEnabled )
-    self.dockWidgetGui['addImageGimp'].setEnabled( isEnabled )
-    self.dockWidgetGui['stopProcess'].setEnabled( not isEnabled )
+    self.dockWidgetGui.addFeatures.setEnabled( isEnabled )
+    self.dockWidgetGui.addImageGimp.setEnabled( isEnabled )
+    self.dockWidgetGui.stopProcess.setEnabled( not isEnabled )
 
   def setEndProcess(self):
     self.setEnabledWidgetAdd( True )
-    self.dockWidgetGui['status'].setText( self.paramsImage['layername'] )
+    self.dockWidgetGui.status.setText( self.paramsImage['layername'] )
 
   @QtCore.pyqtSlot(dict)
   def finishedWorker(self, data):
@@ -398,8 +397,8 @@ class GimpSelectionFeature(QtCore.QObject):
       del self.paramsImage
       self.paramsImage = None
       self.setEnabledWidgetAdd( False )
-      self.dockWidgetGui['stopProcess'].setEnabled( False )
-      self.dockWidgetGui['status'].setText( "" )
+      self.dockWidgetGui.stopProcess.setEnabled( False )
+      self.dockWidgetGui.status.setText( "" )
       #
       return
 
@@ -414,7 +413,7 @@ class GimpSelectionFeature(QtCore.QObject):
     if self.paramsImage is None:
       return
 
-    self.dockWidgetGui['status'].setText( "Add features..." )
+    self.dockWidgetGui.status.setText( "Add features..." )
     self.setEnabledWidgetAdd( False )
 
     if self.layerPolygon is None:
@@ -429,7 +428,7 @@ class GimpSelectionFeature(QtCore.QObject):
     if self.paramsImage is None:
       return
 
-    self.dockWidgetGui['status'].setText( "Add image..." )
+    self.dockWidgetGui.status.setText( "Add image..." )
     self.setEnabledWidgetAdd( False )
 
     self.worker.setDataRun( self.paramsImage, self.layerPolygon,  'addImageGimp')
@@ -438,7 +437,7 @@ class GimpSelectionFeature(QtCore.QObject):
 
   @QtCore.pyqtSlot()
   def stopProcess(self):
-    self.dockWidgetGui['status'].setText( "Stop..." )
+    self.dockWidgetGui.status.setText( "Stop..." )
     if self.thread.isRunning():
       self.worker.isKilled = True
 
@@ -478,13 +477,7 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
     super( DockWidgetGimpSelectionFeature, self ).__init__( "Gimp Selection Feature", iface.mainWindow() )
     #
     setupUi()
-    self.dockWidgetGui = {
-      'addFeatures': self.addFeatures,
-      'addImageGimp': self.addImageGimp,
-      'stopProcess': self.stopProcess,
-      'status': self.status
-    }
-    self.gsf = GimpSelectionFeature( iface, self.dockWidgetGui )
+    self.gsf = GimpSelectionFeature( iface, self )
 
   def __del__(self):
     del self.gsf
