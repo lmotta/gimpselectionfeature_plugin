@@ -319,7 +319,7 @@ class GimpSelectionFeature(QtCore.QObject):
     super(GimpSelectionFeature, self).__init__()
     self.dockWidgetGui = dockWidgetGui
     self.paramsImage =  self.layerPolygon = self.layerImage = None
-    self.thread = self.hasConnect = None
+    self.thread = self.forceStopThread = self.hasConnect = None
     self.nameModulus = "GimpSelectionFeature"
     ( self.iface, self.canvas,  self.msgBar ) = ( iface, iface.mapCanvas(), iface.messageBar() )
     self.session_bus = dbus.SessionBus()
@@ -454,6 +454,7 @@ class GimpSelectionFeature(QtCore.QObject):
 
     self.setEndProcess()
     if not data['isOk']:
+      self.forceStopThread = False
       return
 
     if data.has_key('bboxFeats'):
@@ -554,7 +555,7 @@ class GimpSelectionFeature(QtCore.QObject):
       extentCanvas = self.canvas.extent()
 
       if self.layerImage.crs() != crsCanvas:
-        extentCanvas = mapSettings.mapToLayerCoordinates( layer, extentCanvas )
+        extentCanvas = mapSettings.mapToLayerCoordinates( self.layerImage, extentCanvas )
 
       extentLayer = self.layerImage.extent()
       if not extentCanvas.intersects( extentLayer ):
@@ -603,9 +604,16 @@ class GimpSelectionFeature(QtCore.QObject):
 
   @QtCore.pyqtSlot()
   def stopProcess(self):
+    def forceStop():
+      if self.forceStopThread:
+        self.finishThread()
+        self.initThread()
+
     self.dockWidgetGui.status.setText( "Stop..." )
     if self.thread.isRunning():
+      self.forceStopThread = True
       self.worker.isKilled = True
+      QtCore.QTimer.singleShot( 500, forceStop )
 
 class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
   def __init__(self, iface):
