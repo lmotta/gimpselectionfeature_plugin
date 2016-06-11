@@ -47,10 +47,14 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
 
   def setDataRun(self, paramsImage, layerPolygon, nameProcess):
     ( self.paramsImage, self.layerPolygon ) = ( paramsImage, layerPolygon ) 
-    if nameProcess == 'addFeatures':
+    if 'addFeatures' == nameProcess:
       self.runProcess = self.addFeatures
-    elif nameProcess == 'addImageGimp':
+    elif 'addImageGimp' == nameProcess:
       self.runProcess = self.addImageGimp
+    elif 'addImageViewGimp' == nameProcess:
+      self.runProcess = self.addImageViewGimp
+    else:
+      self.runProcess = None
 
   def setInterfaceDBus(self):
     if not self.name_bus['uri'] in self.session_bus.list_names():
@@ -242,15 +246,77 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
     self.messageStatus.emit( { 'type': QgsGui.QgsMessageBar.INFO, 'msg': msg } )
     self.finished.emit( { 'isOk': True } )
 
+  def addImageViewGimp(self):
+    def createViewImage():
+      def addGeoInfo():
+        ds = gdal.Open( filename, GA_Update )
+        ds.SetProjection( self.paramsImage['wktProj'] )
+        res =self.paramsImage['res']
+        ds.SetGeoTransform( [ p_e.xMinimum(), res[0], 0, p_e.yMaximum(), 0, res[1] ] )
+        del ds
+        ds = None
+
+      p_e  = self.paramsImage['view']['extent']
+      p_w  = self.paramsImage['view']['widthRead']
+      p_h  = self.paramsImage['view']['heightRead']
+      blockImage = self.paramsImage['renderer'].block( 1, p_e, p_w, p_h ).image()
+      if blockImage is None:
+        msg = "Error saving image view ('%s')" % self.paramsImage['filename']
+        return { 'isOk': False, 'msg': msg }
+
+      sf = self.paramsImage['view']['suffix']
+      filename = self.paramsImage['filename']
+      filename = "%s%s.tif" % ( path.splitext( filename )[0], sf )
+      blockImage.save( filename )
+      
+      addGeoInfo()
+
+      return { 'isOk': True, 'filename': filename }
+
+    self.isKilled = False
+    msg = "Adding view of image '%s' in GIMP..." % self.paramsImage['filename']
+    self.messageStatus.emit( { 'type': QgsGui.QgsMessageBar.INFO, 'msg': msg } )
+
+    vreturn = self.setInterfaceDBus()
+    if not vreturn['isOk']:
+      self.finishedWarning( vreturn['msg'] )
+      return
+    if self.isKilled:
+      self.finishedWarning( "Processing is stopped by user" )
+      return
+    vreturn = createViewImage()
+    if not vreturn['isOk']:
+      self.finishedWarning( vreturn['msg'] )
+      return
+    filename = vreturn['filename']
+    if self.isKilled:
+      os.remove( filename )
+      self.finishedWarning( "Processing is stopped by user" )
+      return
+    vreturn = json.loads( str( self.idbus.add_image( filename ) ) )
+    if not vreturn['isOk']:
+      os.remove( filename )
+      self.finishedWarning( vreturn['msg'] )
+      return
+
+    msg = "GIMP: %s" % vreturn['msg']
+    self.messageStatus.emit( { 'type': QgsGui.QgsMessageBar.INFO, 'msg': msg } )
+    self.finished.emit( { 'isOk': True, 'imageview': filename } )
+
   @QtCore.pyqtSlot()
   def run(self):
+    if self.runProcess is None:
+      msg = "ERROR in Script"
+      self.messageStatus.emit( { 'type': QgsGui.QgsMessageBar.CRITICAL, 'msg': msg } )
+      return
     self.runProcess()
 
 class GimpSelectionFeature(QtCore.QObject):
   def __init__(self, iface, dockWidgetGui):
     super(GimpSelectionFeature, self).__init__()
     self.dockWidgetGui = dockWidgetGui
-    self.paramsImage =  self.layerPolygon = self.thread = self.hasConnect = None
+    self.paramsImage =  self.layerPolygon = self.layerImage = None
+    self.thread = self.hasConnect = None
     self.nameModulus = "GimpSelectionFeature"
     ( self.iface, self.canvas,  self.msgBar ) = ( iface, iface.mapCanvas(), iface.messageBar() )
     self.session_bus = dbus.SessionBus()
@@ -311,6 +377,7 @@ class GimpSelectionFeature(QtCore.QObject):
       { 'signal': QgsCore.QgsMapLayerRegistry.instance().layerWillBeRemoved, 'slot': self.removeLayer },
       { 'signal': self.dockWidgetGui.addFeatures.clicked, 'slot': self.addFeature },
       { 'signal': self.dockWidgetGui.addImageGimp.clicked, 'slot': self.addImageGimp },
+      { 'signal': self.dockWidgetGui.addImageViewGimp.clicked, 'slot': self.addImageViewGimp },
       { 'signal': self.dockWidgetGui.stopProcess.clicked, 'slot': self.stopProcess },
     ]
     if isConnect:
@@ -325,6 +392,7 @@ class GimpSelectionFeature(QtCore.QObject):
   def setEnabledWidgetAdd( self, isEnabled ):
     self.dockWidgetGui.addFeatures.setEnabled( isEnabled )
     self.dockWidgetGui.addImageGimp.setEnabled( isEnabled )
+    self.dockWidgetGui.addImageViewGimp.setEnabled( isEnabled )
     self.dockWidgetGui.stopProcess.setEnabled( not isEnabled )
 
   def setEndProcess(self):
@@ -353,14 +421,50 @@ class GimpSelectionFeature(QtCore.QObject):
       self.canvas.refresh()
       highlight()
 
+    def addImageView(filename):
+      def getLayerImage():
+        mls = QgsCore.QgsMapLayerRegistry.instance().mapLayers()
+        for key in mls.keys():
+          if filename == mls[ key ].source():
+            return mls[ key ]
+        return None
+
+      self._connect( False )
+
+      layer = getLayerImage()
+      if not layer is None:
+        QgsMapLayerRegistry.instance().removeMapLayer(layer)
+
+      legend = self.iface.legendInterface()
+      clayer = legend.currentLayer()
+
+      fileInfo = QtCore.QFileInfo(filename)
+      baseName = fileInfo.baseName()
+      layer = self.iface.addRasterLayer( filename, baseName )
+      if layer is None or not layer.isValid():
+        msg = "Error read image(%s)" % filename
+        msgStatus = { msg, QgsGui.QgsMessageBar.WARNING }
+        self.messageStatusWorker( msgStatus )
+      else:
+        legend.setLayerVisible( layer, False )
+        legend.setCurrentLayer( clayer )
+
+      self._connect()
+
     self.thread.quit()
     if self.worker.isKilled: 
       self.thread.wait()
 
     self.setEndProcess()
+    if not data['isOk']:
+      return
 
-    if data['isOk'] and data.has_key('bboxFeats'):
+    if data.has_key('bboxFeats'):
       zoomToBBox( data['bboxFeats'] )
+      return
+    
+    if data.has_key('imageview'):
+      addImageView( data['imageview'] )
 
   @QtCore.pyqtSlot( dict )
   def messageStatusWorker(self, msgStatus):
@@ -371,7 +475,7 @@ class GimpSelectionFeature(QtCore.QObject):
   def setParamsImage(self, layer):
     if layer is None or not layer.type() == QgsCore.QgsMapLayer.RasterLayer:
       return
-
+    
     res = ( layer.rasterUnitsPerPixelX(), -1 * layer.rasterUnitsPerPixelY() )
     tiePoint = ( layer.extent().xMinimum(), layer.extent().yMaximum() )
     crs = layer.crs()
@@ -380,8 +484,12 @@ class GimpSelectionFeature(QtCore.QObject):
       'layername': layer.name(),
       'sIdLayer': layer.id(),
       'res': res, 'tiePoint': tiePoint,
-      'wktProj': str( crs.toWkt() ), 'desc_crs': crs.description()
+      'wktProj': str( crs.toWkt() ),
+      'desc_crs': crs.description(),
+      'view': None,
+      'renderer': layer.renderer()
     }
+    self.layerImage = layer
     msg = "Image '%s' actived " % self.paramsImage['filename']
     self.msgBar.popWidget()
     self.msgBar.pushMessage( self.nameModulus, msg, QgsGui.QgsMessageBar.INFO, 5 )
@@ -436,6 +544,67 @@ class GimpSelectionFeature(QtCore.QObject):
     #self.worker.addImageGimp() # DEBUG
 
   @QtCore.pyqtSlot()
+  def addImageViewGimp(self):
+    def getParamsImageView():
+      def getIniCoord( cMinLayer, cPoint, res ):
+        return int( ( cPoint - cMinLayer ) / res ) * res + cMinLayer
+
+      def getEndCoord( cMaxLayer, cPoint, res ):
+        return cMaxLayer - int( ( cMaxLayer - cPoint ) / res ) * res
+
+      mapSettings = self.canvas.mapSettings()
+      crsCanvas = mapSettings.destinationCrs()
+      extentCanvas = self.canvas.extent()
+
+      if self.layerImage.crs() != crsCanvas:
+        extentCanvas = mapSettings.mapToLayerCoordinates( layer, extentCanvas )
+
+      extentLayer = self.layerImage.extent()
+      if not extentCanvas.intersects( extentLayer ):
+        msg = "View not intersects Raster '%s'" % self.layerImage.name()
+        return { 'isOk': False, 'msg': msg }
+
+      if extentCanvas == extentLayer or extentCanvas.contains( extentLayer):
+        msg = "View has all raster '%s'" % self.layerImage.name()
+        return { 'isOk': False, 'msg': msg }
+
+      extent = extentCanvas.intersect( extentLayer )
+
+      ( resX, resY ) = ( self.paramsImage['res'][0], -1*self.paramsImage['res'][1] )
+      iniX = getIniCoord( self.layerImage.extent().xMinimum(), extent.xMinimum(), resX )
+      iniY = getIniCoord( self.layerImage.extent().yMinimum(), extent.yMinimum(), resY )
+      endX = getEndCoord( self.layerImage.extent().xMaximum(), extent.xMaximum(), resX )
+      endY = getEndCoord( self.layerImage.extent().yMaximum(), extent.yMaximum(), resY )
+
+      extent.set( iniX,iniY, endX, endY  )
+      widthRead  = int( extent.width()  / resX )
+      heightRead = int( extent.height() / resY )
+
+      return {
+          'isOk': True,
+          'extent': extent, 'widthRead': widthRead, 'heightRead': heightRead,
+          'suffix': "_view"
+        }
+
+    if self.paramsImage is None:
+      return
+
+    paramsImageView = getParamsImageView()
+    self.paramsImage['view'] = paramsImageView
+
+    if not self.paramsImage['view']['isOk']:
+      msgStatus = { 'msg': self.paramsImage['view']['msg'], 'type': QgsGui.QgsMessageBar.WARNING }
+      self.messageStatusWorker( msgStatus )
+      return
+
+    self.dockWidgetGui.status.setText( "Add view image..." )
+    self.setEnabledWidgetAdd( False )
+
+    self.worker.setDataRun( self.paramsImage, self.layerPolygon, 'addImageViewGimp')
+    #self.thread.start()
+    self.worker.addImageViewGimp() # DEBUG
+
+  @QtCore.pyqtSlot()
   def stopProcess(self):
     self.dockWidgetGui.status.setText( "Stop..." )
     if self.thread.isRunning():
@@ -460,6 +629,11 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
       self.addImageGimp = QtGui.QPushButton( "Add image -> GIMP", wgt )
       self.addImageGimp.setToolTip( "Add current image to GIMP" )
       gridLayout.addWidget( self.addImageGimp, iniY, iniX, spanY, spanX )
+      #
+      iniY += 1
+      self.addImageViewGimp = QtGui.QPushButton( "Add View image -> GIMP", wgt )
+      self.addImageViewGimp.setToolTip( "Add current view of image to GIMP" )
+      gridLayout.addWidget( self.addImageViewGimp, iniY, iniX, spanY, spanX )
       #
       iniY += 1
       self.stopProcess = QtGui.QPushButton( "Stop", wgt )
