@@ -64,8 +64,11 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
 
     return { 'isOk': True }
 
-  def finishedWarnig(self, msg):
-    self.messageStatus.emit( { 'type': QgsGui.QgsMessageBar.WARNING, 'msg': msg } )
+  def finishedWarning(self, msg):
+    typeMsg = QgsGui.QgsMessageBar.WARNING
+    if self.isKilled:
+      typeMsg = QgsGui.QgsMessageBar.CRITICAL
+    self.messageStatus.emit( { 'type': typeMsg, 'msg': msg } )
     self.finished.emit( { 'isOk': False } )
 
   def addFeatures(self):
@@ -102,7 +105,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       drv = ogr.GetDriverByName('MEMORY')
       ds = drv.CreateDataSource('memData')
       layer = ds.CreateLayer( 'memLayer', srs, ogr.wkbPolygon )
-      field = ogr.FieldDefn("dn", ogr.OFTInteger)
+      field = ogr.Fie+ldDefn("dn", ogr.OFTInteger)
       layer.CreateField( field )
       idField = 0
 
@@ -142,30 +145,47 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
 
       return envFeats
 
-    vreturn = self.setInterfaceDBus()
-    if not vreturn['isOk']:
-      self.finishedWarnig( vreturn['msg'] )
-      return
-
+    self.isKilled = False
     msg = "Creating features in QGIS..."
     self.messageStatus.emit( { 'type': QgsGui.QgsMessageBar.INFO, 'msg': msg } )
+
+    vreturn = self.setInterfaceDBus()
+    if not vreturn['isOk']:
+      self.finishedWarning( vreturn['msg'] )
+      return
+    if self.isKilled:
+      self.finishedWarning( "Processing is stopped by user" )
+      return
     pImgSel = json.loads( str( self.idbus.create_selection_image( self.paramsImage['filename'] ) ) )
     if not pImgSel['isOk']:
-      self.finishedWarnig( pImgSel['msg'] )
+      self.finishedWarning( pImgSel['msg'] )
+      return
+    if self.isKilled:
+      self.finishedWarning( "Processing is stopped by user" )
+      os.remove( pImgSel['filename'] )
       return
     vreturn = setGeorefImage()
     if not vreturn['isOk']:
-      self.finishedWarnig( vreturn['msg'] )
+      self.finishedWarning( vreturn['msg'] )
+      os.remove( pImgSel['filename'] )
+      return
+    if self.isKilled:
+      self.finishedWarning( "Processing is stopped by user" )
+      os.remove( pImgSel['filename'] )
       return
     vreturn = polygonizeSelectionImage()
+    os.remove( pImgSel['filename'] )
     if not vreturn['isOk']:
-      self.finishedWarnig( vreturn['msg'] )
+      self.finishedWarning( vreturn['msg'] )
+      return
+    if self.isKilled:
+      self.finishedWarning( "Processing is stopped by user" )
       return
 
     totalFeats = len( vreturn['geoms'] ) 
     if totalFeats  == 0:
       msg = "Not found features in selections ('%s')" % self.paramsImage['filename']
-      self.finishedWarnig( msg )
+      self.finishedWarning( msg )
       return
 
     srsLayerPolygon = osr.SpatialReference()
@@ -214,16 +234,21 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
     self.finished.emit( { 'isOk': True, 'bboxFeats': bboxFeats } )
 
   def addImageGimp(self):
-    vreturn = self.setInterfaceDBus()
-    if not vreturn['isOk']:
-      self.finishedWarnig( vreturn['msg'] )
-      return
-
+    self.isKilled = False
     msg = "Adding image '%s' in GIMP..." % self.paramsImage['filename']
     self.messageStatus.emit( { 'type': QgsGui.QgsMessageBar.INFO, 'msg': msg } )
+
+    vreturn = self.setInterfaceDBus()
+    if not vreturn['isOk']:
+      self.finishedWarning( vreturn['msg'] )
+      return
+    if self.isKilled:
+      self.finishedWarning( "Processing is stopped by user" )
+      return
+
     vreturn = json.loads( str( self.idbus.add_image( self.paramsImage['filename'] ) ) )
     if not vreturn['isOk']:
-      self.finishedWarnig( vreturn['msg'] )
+      self.finishedWarning( vreturn['msg'] )
       return
 
     msg = "GIMP: %s" % vreturn['msg']
@@ -345,6 +370,9 @@ class GimpSelectionFeature(QtCore.QObject):
     self.thread.quit()
     if self.worker.isKilled: 
       self.thread.wait()
+
+    self.setEndProcess()
+
     if data['isOk'] and data.has_key('bboxFeats'):
       zoomToBBox( data['bboxFeats'] )
 
@@ -371,7 +399,7 @@ class GimpSelectionFeature(QtCore.QObject):
     msg = "Image '%s' actived " % self.paramsImage['filename']
     self.msgBar.popWidget()
     self.msgBar.pushMessage( self.nameModulus, msg, QgsGui.QgsMessageBar.INFO, 5 )
-    #
+
     self.setEndProcess()
 
   @QtCore.pyqtSlot(str)
@@ -409,8 +437,6 @@ class GimpSelectionFeature(QtCore.QObject):
     self.thread.start()
     #self.worker.addFeatures() # DEBUG
 
-    self.setEndProcess()
-
   @QtCore.pyqtSlot()
   def addImageGimp(self):
     if self.paramsImage is None:
@@ -423,15 +449,11 @@ class GimpSelectionFeature(QtCore.QObject):
     self.thread.start()
     #self.worker.addImageGimp() # DEBUG
 
-    self.setEndProcess()
-
   @QtCore.pyqtSlot()
   def stopProcess(self):
     self.dockWidgetGui['status'].setText( "Stop..." )
     if self.thread.isRunning():
       self.worker.isKilled = True
-    msg = "Image '%s' actived " % self.paramsImage['filename']
-    self.dockWidgetGui['status'].setText( self.paramsImage['layername'] )
 
 class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
   def __init__(self, iface):
@@ -444,12 +466,12 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
       gridLayout.setContentsMargins( 0, 0, gridLayout.verticalSpacing(), gridLayout.verticalSpacing() )
       #
       ( iniY, iniX, spanY, spanX ) = ( 0, 0, 1, 1 )
-      self.addFeatures = QtGui.QPushButton( "Add features", wgt )
+      self.addFeatures = QtGui.QPushButton( "Add features -> QGIS", wgt )
       self.addFeatures.setToolTip( "Add features from GIMP" )
       gridLayout.addWidget( self.addFeatures, iniY, iniX, spanY, spanX )
       #
       iniY += 1
-      self.addImageGimp = QtGui.QPushButton( "Add image", wgt )
+      self.addImageGimp = QtGui.QPushButton( "Add image -> GIMP", wgt )
       self.addImageGimp.setToolTip( "Add current image to GIMP" )
       gridLayout.addWidget( self.addImageGimp, iniY, iniX, spanY, spanX )
       #
