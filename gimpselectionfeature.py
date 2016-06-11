@@ -433,10 +433,9 @@ class GimpSelectionFeature(QtCore.QObject):
 
       layer = getLayerImage()
       if not layer is None:
-        QgsMapLayerRegistry.instance().removeMapLayer(layer)
+        QgsCore.QgsMapLayerRegistry.instance().removeMapLayer(layer)
 
       legend = self.iface.legendInterface()
-      clayer = legend.currentLayer()
 
       fileInfo = QtCore.QFileInfo(filename)
       baseName = fileInfo.baseName()
@@ -447,7 +446,6 @@ class GimpSelectionFeature(QtCore.QObject):
         self.messageStatusWorker( msgStatus )
       else:
         legend.setLayerVisible( layer, False )
-        legend.setCurrentLayer( clayer )
 
       self._connect()
 
