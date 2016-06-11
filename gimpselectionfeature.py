@@ -105,7 +105,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       drv = ogr.GetDriverByName('MEMORY')
       ds = drv.CreateDataSource('memData')
       layer = ds.CreateLayer( 'memLayer', srs, ogr.wkbPolygon )
-      field = ogr.Fie+ldDefn("dn", ogr.OFTInteger)
+      field = ogr.FieldDefn("dn", ogr.OFTInteger)
       layer.CreateField( field )
       idField = 0
 
@@ -199,21 +199,12 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       self.layerPolygon.startEditing()
 
     envFeats = None # [ xmin, xmax, ymin, ymax ]
-    tolerance = 1 # Pixels ??
-    totErrorGeom = 0
+    paramSmooth = { 'iter': 1, 'offset': 0.25 } # Default
     for geom in vreturn['geoms']:
-      #geomSmoot = geom.ConvexHull()
-      #geomSmoot = geom.DelaunayTriangulation( tolerance ) # Not exist
-      geomSmoot = geom.SimplifyPreserveTopology( tolerance )
-      if geomSmoot is None:
-        totErrorGeom += 1
-        geom.Destroy()
-        continue
+      geom.TransformTo( srsLayerPolygon )
+      envFeats = envelopGeoms( envFeats, geom )
+      geomLayer = QgsCore.QgsGeometry.fromWkt( geom.ExportToWkt() ).smooth( paramSmooth['iter'], paramSmooth['offset'] )
       geom.Destroy()
-      geomSmoot.TransformTo( srsLayerPolygon )
-      envFeats = envelopGeoms( envFeats, geomSmoot )
-      geomLayer = QgsCore.QgsGeometry.fromWkt( geomSmoot.ExportToWkt() )
-      geomSmoot.Destroy()
       feat.setGeometry( geomLayer )
       self.layerPolygon.addFeature( feat )
       del geomLayer
@@ -225,11 +216,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
     self.layerPolygon.updateExtents()
 
     msg = "Added %d features in '%s'" % ( totalFeats, self.layerPolygon.name() )
-    typMsg = QgsGui.QgsMessageBar.INFO
-    if totErrorGeom > 0:
-      msg = "Added %d features in '%s' (%d selection with missing geoemtry)" % ( totalFeats, self.layerPolygon.name() )
-      typMsg = QgsGui.QgsMessageBar.WARNING
-    self.messageStatus.emit( { 'type': typMsg, 'msg': msg  } )
+    self.messageStatus.emit( { 'type': QgsGui.QgsMessageBar.INFO, 'msg': msg  } )
     bboxFeats = QgsCore.QgsRectangle( envFeats[0], envFeats[2], envFeats[1], envFeats[3] )
     self.finished.emit( { 'isOk': True, 'bboxFeats': bboxFeats } )
 
@@ -265,16 +252,16 @@ class GimpSelectionFeature(QtCore.QObject):
     self.dockWidgetGui = dockWidgetGui
     self.setEnabledWidgetAdd( False )
     dockWidgetGui['stopProcess'].setEnabled( False )
-    #
+
     self.paramsImage =  self.layerPolygon = self.thread = self.hasConnect = None
-    #
+
     self.nameModulus = "GimpSelectionFeature"
     ( self.iface, self.canvas,  self.msgBar ) = ( iface, iface.mapCanvas(), iface.messageBar() )
     self.session_bus = dbus.SessionBus()
     uri = "gimp.plugin.dbus.selection"
     name_bus = { 'uri': uri, 'path': "/%s" % uri.replace( '.', '/' ) }
     self.worker = WorkerGimpSelectionFeature( self.session_bus, name_bus )
-    #
+
     self.initThread()
     self._connect()
 
@@ -434,8 +421,8 @@ class GimpSelectionFeature(QtCore.QObject):
       self.createLayerPolygon()
 
     self.worker.setDataRun( self.paramsImage, self.layerPolygon, 'addFeatures' )
-    self.thread.start()
-    #self.worker.addFeatures() # DEBUG
+    #self.thread.start()
+    self.worker.addFeatures() # DEBUG
 
   @QtCore.pyqtSlot()
   def addImageGimp(self):
@@ -492,7 +479,9 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
     #
     setupUi()
     self.dockWidgetGui = {
-      'addFeatures': self.addFeatures, 'addImageGimp': self.addImageGimp, 'stopProcess': self.stopProcess,
+      'addFeatures': self.addFeatures,
+      'addImageGimp': self.addImageGimp,
+      'stopProcess': self.stopProcess,
       'status': self.status
     }
     self.gsf = GimpSelectionFeature( iface, self.dockWidgetGui )
