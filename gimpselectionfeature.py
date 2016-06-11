@@ -80,19 +80,19 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       ds = gdal.Open( pImgSel['filename'], GA_Update )
       if gdal.GetLastErrorType() != 0:
         return { 'isOk': False, 'msg': gdal.GetLastErrorMsg() }
-      #
+
       i = 0
       xIni = self.paramsImage['tiePoint'][i] + pImgSel['tiePoint'][i] * self.paramsImage['res'][i]
       i = 1
       yIni = self.paramsImage['tiePoint'][i] + pImgSel['tiePoint'][i] * self.paramsImage['res'][i]
-      #
+
       transform = ( xIni, self.paramsImage['res'][0], 0.0, yIni, 0.0, self.paramsImage['res'][1] )
       ds.SetGeoTransform( transform )
       ds.SetProjection( self.paramsImage['wktProj'] )
-      #
+
       band = ds.GetRasterBand( 1 )
       band.SetNoDataValue( 0.0 )
-      #
+
       ds = None
 
       return { 'isOk': True }
@@ -248,13 +248,19 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
 
   def addImageViewGimp(self):
     def createViewImage():
+      def getFileNameImageView():
+        sf = self.paramsImage['view']['suffix']
+        filename = self.paramsImage['filename']
+
+        return "%s%s.tif" % ( path.splitext( filename )[0], sf )
+
       def addGeoInfo():
-        ds = gdal.Open( filename, GA_Update )
-        ds.SetProjection( self.paramsImage['wktProj'] )
-        res =self.paramsImage['res']
-        ds.SetGeoTransform( [ p_e.xMinimum(), res[0], 0, p_e.yMaximum(), 0, res[1] ] )
-        del ds
-        ds = None
+          ds = gdal.Open( filename, GA_Update )
+          ds.SetProjection( self.paramsImage['wktProj'] )
+          res =self.paramsImage['res']
+          ds.SetGeoTransform( [ p_e.xMinimum(), res[0], 0, p_e.yMaximum(), 0, res[1] ] )
+          del ds
+          ds = None
 
       p_e  = self.paramsImage['view']['extent']
       p_w  = self.paramsImage['view']['widthRead']
@@ -264,11 +270,8 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
         msg = "Error saving image view ('%s')" % self.paramsImage['filename']
         return { 'isOk': False, 'msg': msg }
 
-      sf = self.paramsImage['view']['suffix']
-      filename = self.paramsImage['filename']
-      filename = "%s%s.tif" % ( path.splitext( filename )[0], sf )
+      filename = getFileNameImageView()
       blockImage.save( filename )
-      
       addGeoInfo()
 
       return { 'isOk': True, 'filename': filename }
@@ -293,7 +296,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       os.remove( filename )
       self.finishedWarning( "Processing is stopped by user" )
       return
-    vreturn = json.loads( str( self.idbus.add_image( filename ) ) )
+    vreturn = json.loads( str( self.idbus.add_image_overwrite( filename ) ) )
     if not vreturn['isOk']:
       os.remove( filename )
       self.finishedWarning( vreturn['msg'] )
@@ -430,12 +433,10 @@ class GimpSelectionFeature(QtCore.QObject):
         return None
 
       self._connect( False )
-
       layer = getLayerImage()
       if not layer is None:
         QgsCore.QgsMapLayerRegistry.instance().removeMapLayer(layer)
-
-      legend = self.iface.legendInterface()
+      self._connect()
 
       fileInfo = QtCore.QFileInfo(filename)
       baseName = fileInfo.baseName()
@@ -445,9 +446,7 @@ class GimpSelectionFeature(QtCore.QObject):
         msgStatus = { msg, QgsGui.QgsMessageBar.WARNING }
         self.messageStatusWorker( msgStatus )
       else:
-        legend.setLayerVisible( layer, False )
-
-      self._connect()
+        self.iface.legendInterface().setLayerVisible( layer, False )
 
     self.thread.quit()
     if self.worker.isKilled: 
@@ -526,8 +525,8 @@ class GimpSelectionFeature(QtCore.QObject):
       self.createLayerPolygon()
 
     self.worker.setDataRun( self.paramsImage, self.layerPolygon, 'addFeatures' )
-    #self.thread.start()
-    self.worker.addFeatures() # DEBUG
+    self.thread.start()
+    #self.worker.addFeatures() # DEBUG
 
   @QtCore.pyqtSlot()
   def addImageGimp(self):
