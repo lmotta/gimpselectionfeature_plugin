@@ -248,12 +248,6 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
 
   def addImageViewGimp(self):
     def createViewImage():
-      def getFileNameImageView():
-        sf = self.paramsImage['view']['suffix']
-        filename = self.paramsImage['filename']
-
-        return "%s%s.tif" % ( path.splitext( filename )[0], sf )
-
       def addGeoInfo():
           ds = gdal.Open( filename, GA_Update )
           ds.SetProjection( self.paramsImage['wktProj'] )
@@ -270,7 +264,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
         msg = "Error saving image view ('%s')" % self.paramsImage['filename']
         return { 'isOk': False, 'msg': msg }
 
-      filename = getFileNameImageView()
+      filename = self.paramsImage['view']['filename']
       blockImage.save( filename )
       addGeoInfo()
 
@@ -318,7 +312,7 @@ class GimpSelectionFeature(QtCore.QObject):
   def __init__(self, iface, dockWidgetGui):
     super(GimpSelectionFeature, self).__init__()
     self.dockWidgetGui = dockWidgetGui
-    self.paramsImage =  self.layerPolygon = self.layerImage = None
+    self.paramsImage =  self.layerPolygon = self.layerImage = self.filenameImageView = None
     self.thread = self.forceStopThread = self.hasConnect = None
     self.nameModulus = "GimpSelectionFeature"
     ( self.iface, self.canvas,  self.msgBar ) = ( iface, iface.mapCanvas(), iface.messageBar() )
@@ -431,7 +425,7 @@ class GimpSelectionFeature(QtCore.QObject):
           if filename == mls[ key ].source():
             return mls[ key ]
         return None
-
+      
       self._connect( False )
       layer = getLayerImage()
       if not layer is None:
@@ -463,6 +457,7 @@ class GimpSelectionFeature(QtCore.QObject):
     
     if data.has_key('imageview'):
       addImageView( data['imageview'] )
+      self.filenameImageView = data['imageview']
 
   @QtCore.pyqtSlot( dict )
   def messageStatusWorker(self, msgStatus):
@@ -578,10 +573,14 @@ class GimpSelectionFeature(QtCore.QObject):
       widthRead  = int( extent.width()  / resX )
       heightRead = int( extent.height() / resY )
 
+      sf = '_view'
+      filename = self.paramsImage['filename']
+      filename = "%s%s.tif" % ( self.paramsImage['filename'], sf )
+
       return {
           'isOk': True,
           'extent': extent, 'widthRead': widthRead, 'heightRead': heightRead,
-          'suffix': "_view"
+          'filename': filename
         }
 
     if self.paramsImage is None:
@@ -598,6 +597,9 @@ class GimpSelectionFeature(QtCore.QObject):
     self.dockWidgetGui.status.setText( "Add view image..." )
     self.setEnabledWidgetAdd( False )
 
+    if not self.filenameImageView is None:
+      os.remove( self.filenameImageView )
+    
     self.worker.setDataRun( self.paramsImage, self.layerPolygon, 'addImageViewGimp')
     #self.thread.start()
     self.worker.addImageViewGimp() # DEBUG
