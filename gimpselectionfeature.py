@@ -110,6 +110,18 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
         return { 'isOk': False, 'msg': gdal.GetLastErrorMsg() }
       band = ds_img.GetRasterBand( 1 )
 
+      # Sieve Band
+      drv = gdal.GetDriverByName('MEM')
+      ds_sieve = drv.Create( '', ds_img.RasterXSize, ds_img.RasterYSize,1, band.DataType )
+      ds_sieve.SetGeoTransform( ds_img.GetGeoTransform() )
+      band_sieve = ds_sieve.GetRasterBand(1)
+
+      gdal.SieveFilter( band, None, band_sieve,
+                       paramsSieve['threshold'], paramsSieve['connectedness'], [], callback=None )
+      ds_img = band = None
+      if gdal.GetLastErrorType() != 0:
+        return { 'isOk': False, 'msg': gdal.GetLastErrorMsg() }
+
       # Memory layer - Polygonize
       srs = osr.SpatialReference()
       srs.ImportFromWkt( self.paramsImage['wktProj'] )
@@ -120,11 +132,10 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       layer.CreateField( field )
       idField = 0
 
-      gdal.Polygonize( band, None, layer, idField, [], callback=None )
+      gdal.Polygonize( band_sieve, None, layer, idField, [], callback=None )
+      ds_sieve = band_sieve = None
       if gdal.GetLastErrorType() != 0:
         return { 'isOk': False, 'msg': gdal.GetLastErrorMsg() }
-
-      ds_img = band = None
 
       # Get Geoms
       geoms = []
@@ -157,7 +168,13 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       return envFeats
 
     self.isKilled = False
-    
+
+    # Params
+    # iter: interations, offset: 0.0 - 1.0(100%)
+    paramSmooth = { 'iter': 1, 'offset': 0.25 } # Default
+    # threshold = Size in Pixel, connectedness = 4 or 8(diagonal)
+    paramsSieve = { 'threshold': 5, 'connectedness': 4 } 
+
     filename = self.paramsImage['filename']
     isView = QtCore.Qt.Checked == self.paramsImage['view']['checkState']
     if isView:
@@ -216,7 +233,6 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       self.layerPolygon.startEditing()
 
     envFeats = None # [ xmin, xmax, ymin, ymax ]
-    paramSmooth = { 'iter': 1, 'offset': 0.25 } # Default
     for geom in vreturn['geoms']:
       geom.TransformTo( srsLayerPolygon )
       envFeats = envelopGeoms( envFeats, geom )
@@ -622,9 +638,9 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
       layoutTransfer = QtGui.QGridLayout( wgt )
       self.chkIsView = QtGui.QCheckBox("View", wgt)
       layoutTransfer.addWidget( self.chkIsView, 0, 0, QtCore.Qt.AlignLeft )
-      self.btnAddImage = QtGui.QPushButton("Add Image -> GIMP", wgt )
+      self.btnAddImage = QtGui.QPushButton("QGIS -> GIMP (Add image)", wgt )
       layoutTransfer.addWidget( self.btnAddImage, 1, 0, QtCore.Qt.AlignLeft )
-      self.btnAddFeatures = QtGui.QPushButton("Add features -> QGIS", wgt )
+      self.btnAddFeatures = QtGui.QPushButton("GIMP -> QGIS (Add features)", wgt )
       layoutTransfer.addWidget( self.btnAddFeatures, 2, 0, QtCore.Qt.AlignLeft )
       self.btnStopTransfer = QtGui.QPushButton("Stop", wgt )
       layoutTransfer.addWidget( self.btnStopTransfer, 3, 0, QtCore.Qt.AlignLeft )
