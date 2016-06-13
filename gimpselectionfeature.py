@@ -559,7 +559,7 @@ class GimpSelectionFeature(QtCore.QObject):
       self.layerPolygon =  QgsCore.QgsVectorLayer( "Polygon?%s" % s_fields, "gimp_selection_polygon", "memory")
       QgsCore.QgsMapLayerRegistry.instance().addMapLayer( self.layerPolygon )
       self.layerPolygon.loadNamedStyle( os.path.join( os.path.dirname( __file__ ), "gimpselectionfeature.qml" ) )
-      self.iface.legendInterface().refreshLayerSymbology( self.layer )
+      self.iface.legendInterface().refreshLayerSymbology( self.layerPolygon )
 
     if self.paramsImage is None:
       return
