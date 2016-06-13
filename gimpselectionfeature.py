@@ -433,7 +433,6 @@ class GimpSelectionFeature(QtCore.QObject):
     if not self.layerImage is None and self.layerImage.id() == sIdLayer:
       if self.thread.isRunning():
         self.worker.isKilled = True
-
       if self.paramsImage['view'].has_key('filename'):
         if path.exists( self.paramsImage['view']['filename'] ):
           os.remove( self.paramsImage['view']['filename'] )
@@ -442,17 +441,13 @@ class GimpSelectionFeature(QtCore.QObject):
       self.setLabelLayer( self.dockWidgetGui.lblCurImage )
       self.setEnabledWidgetAdd( False )
       self.dockWidgetGui.btnStopTransfer.setEnabled( False )
-
       return
-    
     if not self.layerChange is None and self.layerChange.id() == sIdLayer:
-      self.setChangeImage( None )
+      self.setSelectImage( None )
       return
-
     if not self.layerPolygon is None and self.layerPolygon.id() == sIdLayer:
       if self.thread.isRunning():
         self.worker.isKilled = True
-
       self.layerPolygon = None
 
   @QtCore.pyqtSlot(QgsCore.QgsMapLayer)
@@ -561,13 +556,16 @@ class GimpSelectionFeature(QtCore.QObject):
       l_fields.insert( 0, "crs=epsg:4326" )
       l_fields.append( "index=yes" )
       s_fields = '&'.join( l_fields )
-      self.layerPolygon =  QgsCore.QgsVectorLayer( "Polygon?%s" % s_fields, "gimp_polygon", "memory")
+      self.layerPolygon =  QgsCore.QgsVectorLayer( "Polygon?%s" % s_fields, "gimp_selection_polygon", "memory")
       QgsCore.QgsMapLayerRegistry.instance().addMapLayer( self.layerPolygon )
+      self.layerPolygon.loadNamedStyle( os.path.join( os.path.dirname( __file__ ), "gimpselectionfeature.qml" ) )
+      self.iface.legendInterface().refreshLayerSymbology( self.layer )
 
     if self.paramsImage is None:
       return
 
     checkState = self.dockWidgetGui.chkIsView.checkState()
+    self.paramsImage['view']['checkState'] = checkState
     if QtCore.Qt.Checked == checkState:
       if not self.paramsImage['view'].has_key('filename'):
         msg = "View image not found. Add View image"
