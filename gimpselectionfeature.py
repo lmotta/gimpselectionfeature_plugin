@@ -18,7 +18,12 @@ email                : motta.luiz@gmail.com
  *                                                                         *
  ***************************************************************************/
 """
-import os, sys, dbus, json, datetime
+import os, sys, json, datetime
+try:
+  import dbus
+except ImportError:
+  pass
+
 from os import path
 
 from PyQt4 import ( QtGui, QtCore )
@@ -114,6 +119,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       drv = gdal.GetDriverByName('MEM')
       ds_sieve = drv.Create( '', ds_img.RasterXSize, ds_img.RasterYSize,1, band.DataType )
       ds_sieve.SetGeoTransform( ds_img.GetGeoTransform() )
+      ds_sieve.SetProjection( self.paramsImage['wktProj'] )
       band_sieve = ds_sieve.GetRasterBand(1)
 
       gdal.SieveFilter( band, None, band_sieve,
@@ -125,23 +131,24 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       # Memory layer - Polygonize
       srs = osr.SpatialReference()
       srs.ImportFromWkt( self.paramsImage['wktProj'] )
-      drv = ogr.GetDriverByName('MEMORY')
-      ds = drv.CreateDataSource('memData')
-      layer = ds.CreateLayer( 'memLayer', srs, ogr.wkbPolygon )
+      drv_poly = ogr.GetDriverByName('MEMORY')
+      ds_poly = drv_poly.CreateDataSource('memData')
+      layer_poly = ds_poly.CreateLayer( 'memLayer', srs, ogr.wkbPolygon )
       field = ogr.FieldDefn("dn", ogr.OFTInteger)
-      layer.CreateField( field )
+      layer_poly.CreateField( field )
       idField = 0
 
-      gdal.Polygonize( band_sieve, None, layer, idField, [], callback=None )
+      gdal.Polygonize( band_sieve, None, layer_poly, idField, [], callback=None )
       ds_sieve = band_sieve = None
       if gdal.GetLastErrorType() != 0:
         return { 'isOk': False, 'msg': gdal.GetLastErrorMsg() }
 
       # Get Geoms
       geoms = []
-      layer.SetAttributeFilter("dn = 255")
-      for feat in layer:
+      layer_poly.SetAttributeFilter("dn = 255")
+      for feat in layer_poly:
         geoms.append( feat.GetGeometryRef().Clone() )
+      ds_poly = layer_poly = None
 
       return { 'isOk': True, 'geoms': geoms }
 
@@ -318,12 +325,12 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
     self.runProcess()
 
 class GimpSelectionFeature(QtCore.QObject):
+  nameModulus = "GimpSelectionFeature"
   def __init__(self, iface, dockWidgetGui):
     super(GimpSelectionFeature, self).__init__()
     self.dockWidgetGui = dockWidgetGui
     self.paramsImage =  self.layerPolygon = self.layerImage = self.layerChange = None
     self.thread = self.forceStopThread = self.hasConnect = None
-    self.nameModulus = "GimpSelectionFeature"
     ( self.iface, self.canvas,  self.msgBar ) = ( iface, iface.mapCanvas(), iface.messageBar() )
     self.session_bus = dbus.SessionBus()
     uri = "gimp.plugin.dbus.selection"
@@ -561,8 +568,8 @@ class GimpSelectionFeature(QtCore.QObject):
     self.dockWidgetGui.lblStatus.setText( "Add image..." )
     self.setEnabledWidgetAdd( False )
     self.worker.setDataRun( self.paramsImage, self.layerPolygon,  'addImageGimp')
-    #self.thread.start()
-    self.worker.addImageGimp() # DEBUG   QtCore.qDebug("DEBUG 1")
+    self.thread.start()
+    #self.worker.addImageGimp() # DEBUG   QtCore.qDebug("DEBUG 1")
 
   @QtCore.pyqtSlot()
   def addFeatures(self):
@@ -600,8 +607,8 @@ class GimpSelectionFeature(QtCore.QObject):
       createLayerPolygon()
 
     self.worker.setDataRun( self.paramsImage, self.layerPolygon, 'addFeatures' )
-    #self.thread.start()
-    self.worker.addFeatures() # DEBUG
+    self.thread.start()
+    #self.worker.addFeatures() # DEBUG
 
   @QtCore.pyqtSlot()
   def stopTransfer(self):
@@ -619,40 +626,63 @@ class GimpSelectionFeature(QtCore.QObject):
 class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
   def __init__(self, iface):
     def setupUi():
+      def getGroupBox(name, parent, widgets):
+        lyt = QtGui.QGridLayout( parent )
+        for item in widgets:
+          lyt.addWidget( item['widget'], item['x'], item['y'], QtCore.Qt.AlignLeft )
+        gbx = QtGui.QGroupBox(name, parent )
+        gbx.setLayout( lyt )
+        return gbx
+
+      def getLayout(parent, widgets):
+        lyt = QtGui.QGridLayout( parent )
+        for item in widgets:
+          lyt.addWidget( item['widget'], item['x'], item['y'], QtCore.Qt.AlignLeft )
+        return lyt
+
       self.setObjectName( "gimpselectionfeature_dockwidget" )
       wgt = QtGui.QWidget( self )
       wgt.setAttribute(QtCore.Qt.WA_DeleteOnClose)
       # Image
-      layoutImage = QtGui.QGridLayout( wgt )
-      label = QtGui.QLabel("Current:", wgt )
-      layoutImage.addWidget( label, 0, 0, QtCore.Qt.AlignLeft )
       self.lblCurImage = QtGui.QLabel("", wgt )
-      layoutImage.addWidget( self.lblCurImage, 0, 1,QtCore.Qt.AlignLeft )
       self.btnSelectImage = QtGui.QPushButton("Set current", wgt )
-      layoutImage.addWidget( self.btnSelectImage, 1, 0, QtCore.Qt.AlignLeft )
       self.lblSelectImage = QtGui.QLabel("Select image in legend", wgt )
-      layoutImage.addWidget( self.lblSelectImage, 1, 1, QtCore.Qt.AlignLeft )
-      groupBoxImage = QtGui.QGroupBox("Image", wgt )
-      groupBoxImage.setLayout( layoutImage )
+      l_wts = [
+        { 'widget': QtGui.QLabel("Current:", wgt ), 'x': 0, 'y': 0 },
+        { 'widget': self.lblCurImage,               'x': 0, 'y': 1 },
+        { 'widget': self.btnSelectImage,            'x': 1, 'y': 0 },
+        { 'widget': self.lblSelectImage,            'x': 1, 'y': 1 },
+      ]
+      gbxImage = getGroupBox( "Image", wgt, l_wts)
       # Transfer
-      layoutTransfer = QtGui.QGridLayout( wgt )
-      self.chkIsView = QtGui.QCheckBox("View", wgt)
-      layoutTransfer.addWidget( self.chkIsView, 0, 0, QtCore.Qt.AlignLeft )
-      self.btnAddImage = QtGui.QPushButton("QGIS -> GIMP (Add image)", wgt )
-      layoutTransfer.addWidget( self.btnAddImage, 1, 0, QtCore.Qt.AlignLeft )
-      self.btnAddFeatures = QtGui.QPushButton("GIMP -> QGIS (Add features)", wgt )
-      layoutTransfer.addWidget( self.btnAddFeatures, 2, 0, QtCore.Qt.AlignLeft )
-      self.btnStopTransfer = QtGui.QPushButton("Stop", wgt )
-      layoutTransfer.addWidget( self.btnStopTransfer, 3, 0, QtCore.Qt.AlignLeft )
+      self.chkIsView = QtGui.QCheckBox("View image", wgt)
+      self.btnAddImage = QtGui.QPushButton("Add image", wgt )
+      self.btnAddFeatures = QtGui.QPushButton("Add features", wgt )
+      self.btnStopTransfer = QtGui.QPushButton("Stop transfer", wgt )
       self.lblStatus = QtGui.QLabel("", wgt )
-      layoutTransfer.addWidget( self.lblStatus, 4, 0, QtCore.Qt.AlignLeft )
-      groupBoxTransfer = QtGui.QGroupBox("Transfer", wgt )
-      groupBoxTransfer.setLayout( layoutTransfer )
-      # Layout Widget 
-      layoutWidget = QtGui.QGridLayout( wgt )
-      layoutWidget.addWidget( groupBoxImage, 0, 0, QtCore.Qt.AlignLeft )
-      layoutWidget.addWidget( groupBoxTransfer, 1, 0, QtCore.Qt.AlignLeft )
-      wgt.setLayout(layoutWidget) 
+      l_wts = [
+        { 'widget': self.btnAddImage, 'x': 0, 'y': 0 }
+      ]
+      gbxQG = getGroupBox( "QGIS->GIMP", wgt, l_wts)
+      l_wts = [
+        { 'widget': self.btnAddFeatures, 'x': 0, 'y': 0 }
+      ]
+      gbxGQ = getGroupBox( "GIMP->QGIS", wgt, l_wts)
+      l_wts = [
+        { 'widget': self.chkIsView,       'x': 0, 'y': 0 },
+        { 'widget': gbxQG,                'x': 1, 'y': 0 },
+        { 'widget': gbxGQ,                'x': 2, 'y': 0 },
+        { 'widget': self.btnStopTransfer, 'x': 3, 'y': 0 }
+      ]
+      gbxTransfer = getGroupBox( "Transfer", wgt, l_wts)
+      #
+      l_wts = [
+        { 'widget': gbxImage,       'x': 0, 'y': 0 },
+        { 'widget': gbxTransfer,    'x': 1, 'y': 0 },
+        { 'widget': self.lblStatus, 'x': 2, 'y': 0 }
+      ]
+      lyt = getLayout( wgt, l_wts )
+      wgt.setLayout( lyt)
       self.setWidget( wgt )
 
     super( DockWidgetGimpSelectionFeature, self ).__init__( "Gimp Selection Feature", iface.mainWindow() )
