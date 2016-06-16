@@ -397,6 +397,7 @@ class GimpSelectionFeature(QtCore.QObject):
 
   def setEnabledWidgetAdd( self, isEnabled ):
     wgts = [ self.dockWidgetGui.chkIsView, self.dockWidgetGui.btnAddImage, self.dockWidgetGui.btnAddFeatures ]
+    self.dockWidgetGui.gbxSettingFeatures.setVisible( isEnabled )
     map( lambda item: item.setEnabled( isEnabled ), wgts )
     self.dockWidgetGui.btnStopTransfer.setEnabled( not isEnabled )
 
@@ -610,10 +611,14 @@ class GimpSelectionFeature(QtCore.QObject):
 
     # paramSmooth: iter = interations, offset = 0.0 - 1.0(100%)
     # paramsSieve: threshold = Size in Pixel, connectedness = 4 or 8(diagonal)
+    threshold = self.dockWidgetGui.sbSieveThreshold.value() + 1
+    offset = self.dockWidgetGui.spSmoothOffset.value() / 100.0
+    vinter = self.dockWidgetGui.sbSmoothIteration.value()
+    
     params = {
       'paramsImage': self.paramsImage,
-      'paramSmooth': { 'iter': 1, 'offset': 0.25 }, # Default
-      'paramsSieve': { 'threshold': 5, 'connectedness': 4 },
+      'paramSmooth': { 'iter': vinter, 'offset': offset }, # Default
+      'paramsSieve': { 'threshold': threshold, 'connectedness': 4 },
       'layerPolygon': self.layerPolygon
     }
     self.worker.setDataRun( params, 'addFeatures' )
@@ -654,10 +659,25 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
 
       def getSpinBoxOffset(wgt, value):
         sp = QtGui.QDoubleSpinBox( wgt)
-        sp.setRange(0.0, 100.0)
+        sp.setRange(0.0, 50.0)
         sp.setSingleStep(12.5)
         sp.setDecimals(2)
-        sp.setSuffix('%')
+        sp.setSuffix(' %')
+        sp.setValue(value)
+        return sp
+
+      def getSpinBoxSieve(wgt, value):
+        sp = QtGui.QSpinBox( wgt)
+        sp.setMinimum(0.0)
+        sp.setSingleStep(1)
+        sp.setSuffix(' pixels')
+        sp.setValue(value)
+        return sp
+
+      def getSpinBoxIteration(wgt, value):
+        sp = QtGui.QSpinBox( wgt)
+        sp.setRange(0, 4)
+        sp.setSingleStep(1)
         sp.setValue(value)
         return sp
 
@@ -686,28 +706,28 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
       self.chkIsView = QtGui.QCheckBox("View image", wgt)
       self.btnAddImage = QtGui.QPushButton("Add image", wgt )
       self.btnAddFeatures = QtGui.QPushButton("Add features", wgt )
-      self.leSieveThreshold = getLineEditInteger( wgt, 5 )
-      self.spSmoothOffset = getSpinBoxOffset( wgt, 0.25 )
-      self.leSmoothIteration  = getLineEditInteger( wgt, 1)
+      self.sbSieveThreshold = getSpinBoxSieve( wgt, 5 )
+      self.spSmoothOffset = getSpinBoxOffset( wgt, 25 )
+      self.sbSmoothIteration  = getSpinBoxIteration( wgt, 1)
       self.btnStopTransfer = QtGui.QPushButton("Stop transfer", wgt )
       self.lblStatus = QtGui.QLabel("", wgt )
       l_wts = [
-        { 'widget': QtGui.QLabel("Level:", wgt ),                   'row': 0, 'col': 0 },
-        { 'widget': self.leSmoothIteration,                         'row': 0, 'col': 1 },
-        { 'widget': QtGui.QLabel("Fraction of line(0-100):", wgt ), 'row': 1, 'col': 0 },
+        { 'widget': QtGui.QLabel("Level(0-3):", wgt ),                   'row': 0, 'col': 0 },
+        { 'widget': self.sbSmoothIteration,                         'row': 0, 'col': 1 },
+        { 'widget': QtGui.QLabel("Fraction of line(0-50):", wgt ), 'row': 1, 'col': 0 },
         { 'widget': self.spSmoothOffset,                            'row': 1, 'col': 1 }
       ]
       gbxSmooth = getGroupBox( "Smooth", wgt, l_wts)
       spamSmooth = { 'row': 1, 'col': 2 }
       l_wts = [
-        { 'widget': QtGui.QLabel("Remove area(pixels):", wgt ), 'row': 0, 'col': 0 },
-        { 'widget': self.leSieveThreshold,                      'row': 0, 'col': 1 },
+        { 'widget': QtGui.QLabel("Remove area:", wgt ), 'row': 0, 'col': 0 },
+        { 'widget': self.sbSieveThreshold,                      'row': 0, 'col': 1 },
         { 'widget': gbxSmooth,                                  'row': 1, 'col': 0, 'spam': spamSmooth }
       ]
-      gbxSettingFeatures = getGroupBox( "Setting", wgt, l_wts)
+      self.gbxSettingFeatures = getGroupBox( "Setting", wgt, l_wts)
       l_wts = [
         { 'widget': self.btnAddFeatures, 'row': 0, 'col': 0 },
-        { 'widget': gbxSettingFeatures, 'row': 1, 'col': 0 }
+        { 'widget': self.gbxSettingFeatures, 'row': 1, 'col': 0 }
       ]
       gbxGQ = getGroupBox( "GIMP->QGIS", wgt, l_wts)
       l_wts = [
