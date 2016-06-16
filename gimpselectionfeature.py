@@ -607,7 +607,7 @@ class GimpSelectionFeature(QtCore.QObject):
 
     if self.layerPolygon is None:
       createLayerPolygon()
-    
+
     # paramSmooth: iter = interations, offset = 0.0 - 1.0(100%)
     # paramsSieve: threshold = Size in Pixel, connectedness = 4 or 8(diagonal)
     params = {
@@ -636,19 +636,37 @@ class GimpSelectionFeature(QtCore.QObject):
 class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
   def __init__(self, iface):
     def setupUi():
-      def getGroupBox(name, parent, widgets):
+      def getLayout(parent, widgets):
         lyt = QtGui.QGridLayout( parent )
         for item in widgets:
-          lyt.addWidget( item['widget'], item['x'], item['y'], QtCore.Qt.AlignLeft )
+          if item.has_key('spam'):
+            sRow, sCol = item['spam']['row'], item['spam']['col']
+            lyt.addWidget( item['widget'], item['row'], item['col'], sRow, sCol, QtCore.Qt.AlignLeft )
+          else:
+            lyt.addWidget( item['widget'], item['row'], item['col'], QtCore.Qt.AlignLeft )
+        return lyt
+
+      def getGroupBox(name, parent, widgets):
+        lyt = getLayout( parent, widgets )
         gbx = QtGui.QGroupBox(name, parent )
         gbx.setLayout( lyt )
         return gbx
 
-      def getLayout(parent, widgets):
-        lyt = QtGui.QGridLayout( parent )
-        for item in widgets:
-          lyt.addWidget( item['widget'], item['x'], item['y'], QtCore.Qt.AlignLeft )
-        return lyt
+      def getSpinBoxOffset(wgt, value):
+        sp = QtGui.QDoubleSpinBox( wgt)
+        sp.setRange(0.0, 100.0)
+        sp.setSingleStep(12.5)
+        sp.setDecimals(2)
+        sp.setSuffix('%')
+        sp.setValue(value)
+        return sp
+
+      def getLineEditInteger(wgt, value):
+        le = QtGui.QLineEdit( wgt )
+        validator = QtGui.QIntValidator( wgt )
+        le.setValidator( validator )
+        le.setText( str(value) )
+        return le
 
       self.setObjectName( "gimpselectionfeature_dockwidget" )
       wgt = QtGui.QWidget( self )
@@ -658,38 +676,56 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
       self.btnSelectImage = QtGui.QPushButton("Set current", wgt )
       self.lblSelectImage = QtGui.QLabel("Select image in legend", wgt )
       l_wts = [
-        { 'widget': QtGui.QLabel("Current:", wgt ), 'x': 0, 'y': 0 },
-        { 'widget': self.lblCurImage,               'x': 0, 'y': 1 },
-        { 'widget': self.btnSelectImage,            'x': 1, 'y': 0 },
-        { 'widget': self.lblSelectImage,            'x': 1, 'y': 1 },
+        { 'widget': QtGui.QLabel("Current:", wgt ), 'row': 0, 'col': 0 },
+        { 'widget': self.lblCurImage,               'row': 0, 'col': 1 },
+        { 'widget': self.btnSelectImage,            'row': 1, 'col': 0 },
+        { 'widget': self.lblSelectImage,            'row': 1, 'col': 1 }
       ]
       gbxImage = getGroupBox( "Image", wgt, l_wts)
       # Transfer
       self.chkIsView = QtGui.QCheckBox("View image", wgt)
       self.btnAddImage = QtGui.QPushButton("Add image", wgt )
       self.btnAddFeatures = QtGui.QPushButton("Add features", wgt )
+      self.leSieveThreshold = getLineEditInteger( wgt, 5 )
+      self.spSmoothOffset = getSpinBoxOffset( wgt, 0.25 )
+      self.leSmoothIteration  = getLineEditInteger( wgt, 1)
       self.btnStopTransfer = QtGui.QPushButton("Stop transfer", wgt )
       self.lblStatus = QtGui.QLabel("", wgt )
       l_wts = [
-        { 'widget': self.btnAddImage, 'x': 0, 'y': 0 }
+        { 'widget': QtGui.QLabel("Level:", wgt ),                   'row': 0, 'col': 0 },
+        { 'widget': self.leSmoothIteration,                         'row': 0, 'col': 1 },
+        { 'widget': QtGui.QLabel("Fraction of line(0-100):", wgt ), 'row': 1, 'col': 0 },
+        { 'widget': self.spSmoothOffset,                            'row': 1, 'col': 1 }
       ]
-      gbxQG = getGroupBox( "QGIS->GIMP", wgt, l_wts)
+      gbxSmooth = getGroupBox( "Smooth", wgt, l_wts)
+      spamSmooth = { 'row': 1, 'col': 2 }
       l_wts = [
-        { 'widget': self.btnAddFeatures, 'x': 0, 'y': 0 }
+        { 'widget': QtGui.QLabel("Remove area(pixels):", wgt ), 'row': 0, 'col': 0 },
+        { 'widget': self.leSieveThreshold,                      'row': 0, 'col': 1 },
+        { 'widget': gbxSmooth,                                  'row': 1, 'col': 0, 'spam': spamSmooth }
+      ]
+      gbxSettingFeatures = getGroupBox( "Setting", wgt, l_wts)
+      l_wts = [
+        { 'widget': self.btnAddFeatures, 'row': 0, 'col': 0 },
+        { 'widget': gbxSettingFeatures, 'row': 1, 'col': 0 }
       ]
       gbxGQ = getGroupBox( "GIMP->QGIS", wgt, l_wts)
       l_wts = [
-        { 'widget': self.chkIsView,       'x': 0, 'y': 0 },
-        { 'widget': gbxQG,                'x': 1, 'y': 0 },
-        { 'widget': gbxGQ,                'x': 2, 'y': 0 },
-        { 'widget': self.btnStopTransfer, 'x': 3, 'y': 0 }
+        { 'widget': self.btnAddImage,        'row': 0, 'col': 0 }
+      ]
+      gbxQG = getGroupBox( "QGIS->GIMP", wgt, l_wts)
+      l_wts = [
+        { 'widget': self.chkIsView,       'row': 0, 'col': 0 },
+        { 'widget': gbxQG,                'row': 1, 'col': 0 },
+        { 'widget': gbxGQ,                'row': 2, 'col': 0 },
+        { 'widget': self.btnStopTransfer, 'row': 3, 'col': 0 }
       ]
       gbxTransfer = getGroupBox( "Transfer", wgt, l_wts)
       #
       l_wts = [
-        { 'widget': gbxImage,       'x': 0, 'y': 0 },
-        { 'widget': gbxTransfer,    'x': 1, 'y': 0 },
-        { 'widget': self.lblStatus, 'x': 2, 'y': 0 }
+        { 'widget': gbxImage,       'row': 0, 'col': 0 },
+        { 'widget': gbxTransfer,    'row': 1, 'col': 0 },
+        { 'widget': self.lblStatus, 'row': 2, 'col': 0 }
       ]
       lyt = getLayout( wgt, l_wts )
       wgt.setLayout( lyt)
