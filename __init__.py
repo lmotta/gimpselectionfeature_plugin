@@ -18,7 +18,7 @@ email                : motta.luiz@gmail.com
  *                                                                         *
  ***************************************************************************/
 """
-import os, stat, sys, re, shutil
+import os, stat, sys, re, shutil, filecmp
 
 from PyQt4 import ( QtGui, QtCore )
 from qgis import gui as QgsGui
@@ -45,23 +45,32 @@ class GimpSelectionFeaturePlugin:
         self.exitsModule = { 'isOk': False, 'msg': msg }
 
     def setExistsPluginGimp():
+      def getDirGimp():
+        mask = r"\.gimp-[0-9]+\.[0-9]+"
+        l_dirGimp = [ f for f in os.listdir( dirHome ) if re.match( mask, f)    ]
+        return { 'isOk': False } if len( l_dirGimp ) == 0 else { 'isOk': True, 'dirGimp': os.path.join( dirHome, l_dirGimp[0] ) }
+
+      def copyNewPlugin():
+        shutil.copy2( gimpPlugin, gimpPluginInstall )
+        if sys.platform != 'win32': # Add executable
+          st =  os.stat( gimpPluginInstall )
+          os.chmod( gimpPluginInstall, st.st_mode | stat.S_IEXEC )
+
+      nameDirPlugin = 'plug-ins'
+      namePlugin = 'dbus_server_selection.py'
       dirHome = os.path.expanduser('~')
-      mask = r"\.gimp-[0-9]+\.[0-9]+"
-      l_dirGimp = [ f for f in os.listdir( dirHome ) if re.match( mask, f)    ]
-      if len( l_dirGimp ) == 0:
+      vreturn = getDirGimp()
+      if not vreturn['isOk']:
         self.exitsPluginGimp = { 'isOk': False, 'msg': "Not found diretory GIMP in '%s'" % dirHome }
-        return
-      dirGimp = os.path.join( dirHome, l_dirGimp[0] )
-      dirPluginGimp = os.path.join( dirGimp, 'plug-ins' )
+      dirPluginGimp = os.path.join( vreturn['dirGimp'], nameDirPlugin )
       if not os.path.exists( dirPluginGimp ):
         self.exitsPluginGimp = { 'isOk': False, 'msg': "Not found plugin's diretory in GIMP in '%s'" % dirPluginGimp }
         return
+      gimpPlugin = os.path.join( os.path.dirname(__file__), namePlugin )
+      gimpPluginInstall = os.path.join( dirPluginGimp, namePlugin )
+      if not os.path.exists( gimpPluginInstall ) or not filecmp.cmp( gimpPlugin, gimpPluginInstall ):
+        copyNewPlugin()
 
-      gimpPlugin = os.path.join( os.path.dirname(__file__), 'dbus_server_selection.py' )
-      if sys.platform != 'win32': # Add executable
-        st =  os.stat( gimpPlugin )
-        os.chmod( gimpPlugin, st.st_mode | stat.S_IEXEC )
-      shutil.copy2( gimpPlugin, dirPluginGimp )
       self.exitsPluginGimp = { 'isOk': True }
 
     name = "Gimp Selection Feature"

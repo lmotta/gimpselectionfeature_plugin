@@ -39,7 +39,8 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
   def __init__(self, session_bus, name_bus):
     super(WorkerGimpSelectionFeature, self).__init__()
     self.isKilled = None
-    self.runProcess = self.paramsImage = self.layerPolygon = None    
+    self.runProcess = self.paramsImage =  None
+    self.paramSmooth = self.paramsSieve = self.layerPolygon = None
 
     ( self.session_bus, self.name_bus ) = ( session_bus, name_bus )
 
@@ -50,10 +51,13 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
     if not self.idbus is None:
       self.idbus.quit()
 
-  def setDataRun(self, paramsImage, layerPolygon, nameProcess):
-    ( self.paramsImage, self.layerPolygon ) = ( paramsImage, layerPolygon ) 
+  def setDataRun(self, params, nameProcess):
+    self.paramsImage = params['paramsImage']
     if 'addFeatures' == nameProcess:
       self.runProcess = self.addFeatures
+      self.paramSmooth = params['paramSmooth']
+      self.paramsSieve = params['paramsSieve']
+      self.layerPolygon = params['layerPolygon']
     elif 'addImageGimp' == nameProcess:
       self.runProcess = self.addImageGimp
     else:
@@ -122,8 +126,9 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       ds_sieve.SetProjection( self.paramsImage['wktProj'] )
       band_sieve = ds_sieve.GetRasterBand(1)
 
-      gdal.SieveFilter( band, None, band_sieve,
-                       paramsSieve['threshold'], paramsSieve['connectedness'], [], callback=None )
+      p_threshold = self.paramsSieve['threshold']
+      p_connectedness = self.paramsSieve['connectedness']
+      gdal.SieveFilter( band, None, band_sieve, p_threshold, p_connectedness, [], callback=None )
       ds_img = band = None
       if gdal.GetLastErrorType() != 0:
         return { 'isOk': False, 'msg': gdal.GetLastErrorMsg() }
@@ -175,13 +180,6 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       return envFeats
 
     self.isKilled = False
-
-    # Params
-    # iter: interations, offset: 0.0 - 1.0(100%)
-    paramSmooth = { 'iter': 1, 'offset': 0.25 } # Default
-    # threshold = Size in Pixel, connectedness = 4 or 8(diagonal)
-    paramsSieve = { 'threshold': 5, 'connectedness': 4 } 
-
     filename = self.paramsImage['filename']
     isView = QtCore.Qt.Checked == self.paramsImage['view']['checkState']
     if isView:
@@ -239,11 +237,13 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
     if not isIniEditable:
       self.layerPolygon.startEditing()
 
+    p_iter = self.paramSmooth['iter']
+    p_offset = self.paramSmooth['offset']
     envFeats = None # [ xmin, xmax, ymin, ymax ]
     for geom in vreturn['geoms']:
       geom.TransformTo( srsLayerPolygon )
       envFeats = envelopGeoms( envFeats, geom )
-      geomLayer = QgsCore.QgsGeometry.fromWkt( geom.ExportToWkt() ).smooth( paramSmooth['iter'], paramSmooth['offset'] )
+      geomLayer = QgsCore.QgsGeometry.fromWkt( geom.ExportToWkt() ).smooth( p_iter, p_offset )
       geom.Destroy()
       feat.setGeometry( geomLayer )
       self.layerPolygon.addFeature( feat )
@@ -277,7 +277,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       blockImage = self.paramsImage['renderer'].block( 1, p_e, p_w, p_h )
       blockImage.image().save( self.paramsImage['view']['filename'] )
       addGeoInfo()
-    
+
     def endWarning(msg):
       if isView:
         if path.exists( filename ):
@@ -567,9 +567,11 @@ class GimpSelectionFeature(QtCore.QObject):
 
     self.dockWidgetGui.lblStatus.setText( "Add image..." )
     self.setEnabledWidgetAdd( False )
-    self.worker.setDataRun( self.paramsImage, self.layerPolygon,  'addImageGimp')
-    self.thread.start()
-    #self.worker.addImageGimp() # DEBUG   QtCore.qDebug("DEBUG 1")
+    
+    params = { 'paramsImage': self.paramsImage }
+    self.worker.setDataRun( params,  'addImageGimp')
+    #self.thread.start()
+    self.worker.addImageGimp() # DEBUG   QtCore.qDebug("DEBUG 1")
 
   @QtCore.pyqtSlot()
   def addFeatures(self):
@@ -605,10 +607,18 @@ class GimpSelectionFeature(QtCore.QObject):
 
     if self.layerPolygon is None:
       createLayerPolygon()
-
-    self.worker.setDataRun( self.paramsImage, self.layerPolygon, 'addFeatures' )
-    self.thread.start()
-    #self.worker.addFeatures() # DEBUG
+    
+    # paramSmooth: iter = interations, offset = 0.0 - 1.0(100%)
+    # paramsSieve: threshold = Size in Pixel, connectedness = 4 or 8(diagonal)
+    params = {
+      'paramsImage': self.paramsImage,
+      'paramSmooth': { 'iter': 1, 'offset': 0.25 }, # Default
+      'paramsSieve': { 'threshold': 5, 'connectedness': 4 },
+      'layerPolygon': self.layerPolygon
+    }
+    self.worker.setDataRun( params, 'addFeatures' )
+    #self.thread.start()
+    self.worker.addFeatures() # DEBUG
 
   @QtCore.pyqtSlot()
   def stopTransfer(self):

@@ -65,23 +65,6 @@ class DBusService(dbus.service.Object):
 
     return { 'isOk': True, 'image': image }
 
-  def exist_selection_image(self, filename):
-    vreturn = self.existImage( filename )
-    if not vreturn['isOk']:
-      return vreturn
-
-    image = vreturn['image']
-
-    vreturn = self.isTifImage( filename )
-    if not vreturn['isOk']:
-      return vreturn
-
-    non_empty, x1, y1, x2, y2 = pdb.gimp_selection_bounds( image )
-    if non_empty == 0:
-      return { 'isOk': False, 'msg': "No selection in '%s'" % filename }
-
-    return { 'isOk': True, 'image': image }
-
   def isTifImage(self, filename):
     isTif = path.splitext( filename )[1].upper() == '.TIF'
     if not isTif:
@@ -123,13 +106,21 @@ class DBusService(dbus.service.Object):
 
   @dbus.service.method( dbus_interface=id_bus_name)
   def create_selection_image(self, filename):
-    vreturn = self.exist_selection_image( filename )
+    vreturn = self.existImage( filename )
     if not vreturn['isOk']:
       return json.dumps( vreturn )
+    image = vreturn['image']
+    vreturn = self.isTifImage( filename )
+    if not vreturn['isOk']:
+      return json.dumps( vreturn )
+    is_empty = pdb.gimp_selection_is_empty( image )
+    if is_empty == 1:
+      return json.dumps( { 'isOk': False, 'msg': "No selection in '%s'" % filename } )
 
-    non_empty, x1, y1, x2, y2 = pdb.gimp_selection_bounds( vreturn['image'] )
-    selimage = vreturn['image'].selection.image.duplicate()
+    non_empty, x1, y1, x2, y2 = pdb.gimp_selection_bounds( image )
+    selimage = image.selection.image.duplicate()
     selimage.crop( x2 - x1, y2 - y1, x1, y1 )
+    pdb.gimp_selection_sharpen( selimage )
     channel = pdb.gimp_selection_save( selimage )
     filename = "%s_select.tif" % path.splitext( filename )[0]
     pdb.file_tiff_save( selimage, channel, filename, "", 0)
