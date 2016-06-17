@@ -65,7 +65,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
 
   def setInterfaceDBus(self):
     if not self.name_bus['uri'] in self.session_bus.list_names():
-      return { 'isOk': False, 'msg': "Active 'Selection save image Server' in Gimp Plugin!" }
+      return { 'isOk': False, 'msg': "Run IBAMA Plugin, Tools/IBAMA/Service for save the selected regions", in GIMP!" }
 
     if self.idbus is None:
       del self.idbus
@@ -291,7 +291,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
     if isView:
       filename = self.paramsImage['view']['filename']
       createViewImage()
-      msg = "Adding View image '%s' in GIMP..." % filename
+      msg = "Adding image view'%s' in GIMP..." % filename
     else:
       filename = self.paramsImage['filename']
       msg = "Adding image '%s' in GIMP..." % filename
@@ -329,7 +329,7 @@ class GimpSelectionFeature(QtCore.QObject):
   def __init__(self, iface, dockWidgetGui):
     super(GimpSelectionFeature, self).__init__()
     self.dockWidgetGui = dockWidgetGui
-    self.paramsImage =  self.layerPolygon = self.layerImage = self.layerChange = None
+    self.paramsImage =  self.last_filename = self.layerPolygon = self.layerImage = self.layerChange = None
     self.thread = self.forceStopThread = self.hasConnect = None
     ( self.iface, self.canvas,  self.msgBar ) = ( iface, iface.mapCanvas(), iface.messageBar() )
     self.session_bus = dbus.SessionBus()
@@ -396,8 +396,11 @@ class GimpSelectionFeature(QtCore.QObject):
         item['signal'].disconnect( item['slot'] )
 
   def setEnabledWidgetAdd( self, isEnabled ):
-    wgts = [ self.dockWidgetGui.chkIsView, self.dockWidgetGui.btnAddImage, self.dockWidgetGui.btnAddFeatures ]
-    self.dockWidgetGui.gbxSettingFeatures.setVisible( isEnabled )
+    wgts = [ self.dockWidgetGui.chkIsView,
+             self.dockWidgetGui.btnAddImage,
+             self.dockWidgetGui.btnAddFeatures,
+             self.dockWidgetGui.gbxSettingFeatures
+           ]
     map( lambda item: item.setEnabled( isEnabled ), wgts )
     self.dockWidgetGui.btnStopTransfer.setEnabled( not isEnabled )
 
@@ -558,6 +561,18 @@ class GimpSelectionFeature(QtCore.QObject):
     if self.paramsImage is None:
       return
 
+    if self.last_filename is None:
+       self.last_filename = self.paramsImage['filename']
+    else:
+      if self.last_filename == self.paramsImage['filename']:
+        value = QtGui.QMessageBox.question( self.dockWidgetGui,
+                                            self.nameModulus, "Replace image in GIMP?",
+                                            QtGui.QMessageBox.Yes | QtGui.QMessageBox.No, QtGui.QMessageBox.No )
+        if QtGui.QMessageBox.Yes == value:
+          self.last_filename = self.paramsImage['filename']
+        else:
+          return
+
     checkState = self.dockWidgetGui.chkIsView.checkState()
     self.paramsImage['view']['checkState'] = checkState
     if QtCore.Qt.Checked == checkState:
@@ -594,12 +609,12 @@ class GimpSelectionFeature(QtCore.QObject):
     self.paramsImage['view']['checkState'] = checkState
     if QtCore.Qt.Checked == checkState:
       if not self.paramsImage['view'].has_key('filename'):
-        msg = "View image not found. Add View image"
+        msg = "Image view not found. Add image view"
         self.messageStatusWorker( { 'msg': msg, 'type': QgsGui.QgsMessageBar.WARNING } )
         return
       filename = self.paramsImage['view']['filename']
       if not path.exists( filename ):
-        msg = "View image '%s' not found. Add View image again" % filename
+        msg = "Image view'%s' not found. Add image view again" % filename
         self.messageStatusWorker( { 'msg': msg, 'type': QgsGui.QgsMessageBar.WARNING } )
         return
 
@@ -614,10 +629,10 @@ class GimpSelectionFeature(QtCore.QObject):
     threshold = self.dockWidgetGui.sbSieveThreshold.value() + 1
     offset = self.dockWidgetGui.spSmoothOffset.value() / 100.0
     vinter = self.dockWidgetGui.sbSmoothIteration.value()
-    
+
     params = {
       'paramsImage': self.paramsImage,
-      'paramSmooth': { 'iter': vinter, 'offset': offset }, # Default
+      'paramSmooth': { 'iter': vinter, 'offset': offset },
       'paramsSieve': { 'threshold': threshold, 'connectedness': 4 },
       'layerPolygon': self.layerPolygon
     }
@@ -676,7 +691,7 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
 
       def getSpinBoxIteration(wgt, value):
         sp = QtGui.QSpinBox( wgt)
-        sp.setRange(0, 4)
+        sp.setRange(0, 3)
         sp.setSingleStep(1)
         sp.setValue(value)
         return sp
@@ -693,17 +708,17 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
       wgt.setAttribute(QtCore.Qt.WA_DeleteOnClose)
       # Image
       self.lblCurImage = QtGui.QLabel("", wgt )
-      self.btnSelectImage = QtGui.QPushButton("Set current", wgt )
+      self.btnSelectImage = QtGui.QPushButton("Set the layer below how current:", wgt )
       self.lblSelectImage = QtGui.QLabel("Select image in legend", wgt )
       l_wts = [
         { 'widget': QtGui.QLabel("Current:", wgt ), 'row': 0, 'col': 0 },
-        { 'widget': self.lblCurImage,               'row': 0, 'col': 1 },
-        { 'widget': self.btnSelectImage,            'row': 1, 'col': 0 },
-        { 'widget': self.lblSelectImage,            'row': 1, 'col': 1 }
+        { 'widget': self.lblCurImage,               'row': 1, 'col': 0 },
+        { 'widget': self.btnSelectImage,            'row': 2, 'col': 0 },
+        { 'widget': self.lblSelectImage,            'row': 3, 'col': 0 }
       ]
       gbxImage = getGroupBox( "Image", wgt, l_wts)
       # Transfer
-      self.chkIsView = QtGui.QCheckBox("View image", wgt)
+      self.chkIsView = QtGui.QCheckBox("Image view", wgt)
       self.btnAddImage = QtGui.QPushButton("Add image", wgt )
       self.btnAddFeatures = QtGui.QPushButton("Add features", wgt )
       self.sbSieveThreshold = getSpinBoxSieve( wgt, 5 )

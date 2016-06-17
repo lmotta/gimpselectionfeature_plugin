@@ -94,7 +94,7 @@ class GimpSelectionFeaturePlugin:
       return
 
     self.dock = DockWidgetGimpSelectionFeature( self.iface )
-    self.iface.addDockWidget( QtCore.Qt.LeftDockWidgetArea , self.dock )
+    self.iface.addDockWidget( QtCore.Qt.RightDockWidgetArea , self.dock )
     self.dock.visibilityChanged.connect( self.dockVisibilityChanged )
 
   def unload(self):

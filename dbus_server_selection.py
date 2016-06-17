@@ -25,7 +25,7 @@ def startPyDevClient():
 
 id_bus_name = "gimp.plugin.dbus.selection"
 id_bus_object_path = "/%s" % id_bus_name.replace( '.', '/' )
-titleServer = "Selection save image Server"
+titleServer = "Service for save the selected regions"
 class DBusService(dbus.service.Object):
   def __init__(self):
     self.addedImages = {}
