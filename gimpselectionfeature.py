@@ -493,7 +493,15 @@ class GimpSelectionFeature(QtCore.QObject):
   def setParamsImage(self):
     if self.layerChange is None:
       return
-    
+    if not self.layerChange.dataProvider().crs().isValid():
+      self.setLabelLayer( self.dockWidgetGui.lblSelectImage )
+      msg = "Invalid CRS of Raster layer '%s'" % self.layerChange.name()
+      msgStatus = { 'msg': msg, 'type': QgsGui.QgsMessageBar.WARNING } 
+      self.messageStatusWorker( msgStatus )
+      self.setLabelLayer( self.dockWidgetGui.lblSelectImage )
+      self.layerChange = None
+      return
+
     self.layerImage = self.layerChange
     res = ( self.layerImage.rasterUnitsPerPixelX(), self.layerImage.rasterUnitsPerPixelY() )
     tiePoint = ( self.layerImage.extent().xMinimum(), self.layerImage.extent().yMaximum() )
