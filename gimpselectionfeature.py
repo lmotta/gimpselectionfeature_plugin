@@ -65,7 +65,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
 
   def setInterfaceDBus(self):
     if not self.name_bus['uri'] in self.session_bus.list_names():
-      return { 'isOk': False, 'msg': "Run IBAMA Plugin, Tools/IBAMA/Service for save the selected regions", in GIMP!" }
+      return { 'isOk': False, 'msg': "Run IBAMA Plugin, 'Tools/IBAMA/Service for save the selected regions', in GIMP!" }
 
     if self.idbus is None:
       del self.idbus
@@ -566,7 +566,7 @@ class GimpSelectionFeature(QtCore.QObject):
     else:
       if self.last_filename == self.paramsImage['filename']:
         value = QtGui.QMessageBox.question( self.dockWidgetGui,
-                                            self.nameModulus, "Replace image in GIMP?",
+                                            self.nameModulus, "Confirm add image in GIMP?",
                                             QtGui.QMessageBox.Yes | QtGui.QMessageBox.No, QtGui.QMessageBox.No )
         if QtGui.QMessageBox.Yes == value:
           self.last_filename = self.paramsImage['filename']
@@ -583,7 +583,7 @@ class GimpSelectionFeature(QtCore.QObject):
 
     self.dockWidgetGui.lblStatus.setText( "Add image..." )
     self.setEnabledWidgetAdd( False )
-    
+
     params = { 'paramsImage': self.paramsImage }
     self.worker.setDataRun( params,  'addImageGimp')
     #self.thread.start()

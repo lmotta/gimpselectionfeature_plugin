@@ -2,7 +2,7 @@
 name=Gimp Selection Feature
 description=Plugin for adding selected area in GIMP how a feature in memory layer
 about=This plugin create a memory layer, where, yours feature can come from selected area in GIMP.
-  See presentation in ??
+  See presentation in http://pt.slideshare.net/LuizMotta3/gimp-selection-feature-plugin-qgis
   This plugin is developed on the demand of IBAMA(Brazilian Institute of Environment and Renewable Natural Resources)
   http://www.ibama.gov.br
   *** TEST ONLY LINUX/UBUNTU, need DBUS module Python (Default in Linux) ***
