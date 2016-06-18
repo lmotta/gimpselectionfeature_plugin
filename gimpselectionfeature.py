@@ -735,21 +735,21 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
       self.btnStopTransfer = QtGui.QPushButton("Stop transfer", wgt )
       self.lblStatus = QtGui.QLabel("", wgt )
       l_wts = [
-        { 'widget': QtGui.QLabel("Level(0-3):", wgt ),                   'row': 0, 'col': 0 },
-        { 'widget': self.sbSmoothIteration,                         'row': 0, 'col': 1 },
+        { 'widget': QtGui.QLabel("Level(0-3):", wgt ),             'row': 0, 'col': 0 },
+        { 'widget': self.sbSmoothIteration,                        'row': 0, 'col': 1 },
         { 'widget': QtGui.QLabel("Fraction of line(0-50):", wgt ), 'row': 1, 'col': 0 },
-        { 'widget': self.spSmoothOffset,                            'row': 1, 'col': 1 }
+        { 'widget': self.spSmoothOffset,                           'row': 1, 'col': 1 }
       ]
       gbxSmooth = getGroupBox( "Smooth", wgt, l_wts)
       spamSmooth = { 'row': 1, 'col': 2 }
       l_wts = [
         { 'widget': QtGui.QLabel("Remove area:", wgt ), 'row': 0, 'col': 0 },
-        { 'widget': self.sbSieveThreshold,                      'row': 0, 'col': 1 },
-        { 'widget': gbxSmooth,                                  'row': 1, 'col': 0, 'spam': spamSmooth }
+        { 'widget': self.sbSieveThreshold,              'row': 0, 'col': 1 },
+        { 'widget': gbxSmooth,                          'row': 1, 'col': 0, 'spam': spamSmooth }
       ]
       self.gbxSettingFeatures = getGroupBox( "Setting", wgt, l_wts)
       l_wts = [
-        { 'widget': self.btnAddFeatures, 'row': 0, 'col': 0 },
+        { 'widget': self.btnAddFeatures,     'row': 0, 'col': 0 },
         { 'widget': self.gbxSettingFeatures, 'row': 1, 'col': 0 }
       ]
       gbxGQ = getGroupBox( "GIMP->QGIS", wgt, l_wts)
