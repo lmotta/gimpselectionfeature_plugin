@@ -7,7 +7,7 @@ mkdir "./$plugin_dir"
 cp *.py "./$plugin_dir"
 cp *.svg "./$plugin_dir"
 cp *.qml "./$plugin_dir"
-for item in metadata.txt README.md LICENSE; do cp "./$item" "./$plugin_dir"; done
+for item in metadata.txt LICENSE; do cp "./$item" "./$plugin_dir"; done
 #mkdir "./$plugin_dir/i18n"
 #cp ./i18n/*.qm "./$plugin_dir/i18n"
 zip -r $plugin_dir $plugin_dir
