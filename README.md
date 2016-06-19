@@ -8,11 +8,12 @@
 
 Work with GIMP. Add image, (view of canvas) or source, from QGIS to GIMP. Add selection area from GIMP to a polygon layer in QGIS.
 
-*Use DBUS libray. Not implement in WINDOWS.*
-
 ## Author
 Luiz Motta
 
 ## Changelog
+- 2016-06-19
+Change DBUS to Scocket
 - 2016-06-16
 Started plugin
+

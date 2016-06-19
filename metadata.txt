@@ -5,16 +5,17 @@ about=This plugin create a memory layer, where, yours feature can come from sele
   See presentation in http://pt.slideshare.net/LuizMotta3/gimp-selection-feature-plugin-qgis
   This plugin is developed on the demand of IBAMA(Brazilian Institute of Environment and Renewable Natural Resources)
   http://www.ibama.gov.br
-  *** TEST ONLY LINUX/UBUNTU, need DBUS module Python (Default in Linux) ***
   Tested with GIMP 2.8
 
-version=0.1
+version=0.2
 qgisMinimumVersion=2.14
 # category=
 author=Luiz Motta
 email=motta.luiz@gmail.com
-changelog=0.1  (2016-06-16)
-  - Start of plugin
+changelog=0.2 (2016-06-19)
+  - Change DBUS to Socket
+0.1 (2016-06-16)
+- Start of plugin
 tags=GIMP,raster, IBAMA
 homepage=https://github.com/lmotta/gimpselectionfeature_plugin
 tracker=http://hub.qgis.org/projects/gimpselectionfeature

@@ -33,17 +33,9 @@ class GimpSelectionFeaturePlugin:
   def __init__(self, iface):
     self.iface = iface
     self.name = u"&Gimp Selection Feature"
-    self.dock = self.exitsModule = self.exitsPluginGimp = None
+    self.dock = self.exitsPluginGimp = None
 
   def initGui(self):
-    def setExistsModule():
-      msg = "Need 'dbus' module in Python compiler!. Please install 'dbus' in Python"
-      self.exitsModule = { 'isOk': True } 
-      try:
-        import dbus
-      except ImportError:
-        self.exitsModule = { 'isOk': False, 'msg': msg }
-
     def setExistsPluginGimp():
       def getDirGimp():
         mask = r"\.gimp-[0-9]+\.[0-9]+"
@@ -57,7 +49,7 @@ class GimpSelectionFeaturePlugin:
           os.chmod( gimpPluginInstall, st.st_mode | stat.S_IEXEC )
 
       nameDirPlugin = 'plug-ins'
-      namePlugin = 'dbus_server_selection.py'
+      namePlugin = 'socket_server_selection.py'
       dirHome = os.path.expanduser('~')
       vreturn = getDirGimp()
       if not vreturn['isOk']:
@@ -86,9 +78,6 @@ class GimpSelectionFeaturePlugin:
     self.iface.addRasterToolBarIcon( self.action )
     self.iface.addPluginToRasterMenu( self.name, self.action )
 
-    setExistsModule()
-    if not self.exitsModule['isOk']:
-      return
     setExistsPluginGimp()
     if not self.exitsPluginGimp['isOk']:
       return
@@ -101,7 +90,7 @@ class GimpSelectionFeaturePlugin:
     self.iface.removeRasterToolBarIcon( self.action )
     self.iface.removePluginRasterMenu( self.name, self.action )
 
-    if self.exitsModule['isOk'] and self.exitsPluginGimp['isOk']:
+    if self.exitsPluginGimp['isOk']:
       self.dock.close()
       del self.dock
       self.dock = None
@@ -110,11 +99,6 @@ class GimpSelectionFeaturePlugin:
 
   @QtCore.pyqtSlot()
   def run(self):
-    if not self.exitsModule['isOk']:
-      ( t, m ) = ( GimpSelectionFeature.nameModulus, self.exitsModule['msg'] )
-      self.iface.messageBar().pushMessage( t, m, QgsGui.QgsMessageBar.CRITICAL, 5 )
-      self.action.setChecked( False )
-      return
     if not self.exitsPluginGimp['isOk']:
       ( t, m ) = ( GimpSelectionFeature.nameModulus, self.exitsPluginGimp['msg'] )
       self.iface.messageBar().pushMessage( t, m, QgsGui.QgsMessageBar.CRITICAL, 5 )

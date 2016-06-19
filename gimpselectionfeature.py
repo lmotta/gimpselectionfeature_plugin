@@ -18,11 +18,7 @@ email                : motta.luiz@gmail.com
  *                                                                         *
  ***************************************************************************/
 """
-import os, sys, json, datetime
-try:
-  import dbus
-except ImportError:
-  pass
+import os, sys, json, datetime, socket
 
 from os import path
 
@@ -36,23 +32,17 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
   finished = QtCore.pyqtSignal(dict)
   messageStatus = QtCore.pyqtSignal(dict)
 
-  def __init__(self, session_bus, name_bus):
+  def __init__(self):
     super(WorkerGimpSelectionFeature, self).__init__()
     self.isKilled = None
     self.runProcess = self.paramsImage =  None
     self.paramSmooth = self.paramsSieve = self.layerPolygon = None
-
-    ( self.session_bus, self.name_bus ) = ( session_bus, name_bus )
-
-    self.idbus = self.proxyDBus = None
+    self.socket = None
     self.idAdd = 0
-
-  def __del__(self):
-    if not self.idbus is None:
-      self.idbus.quit()
 
   def setDataRun(self, params, nameProcess):
     self.paramsImage = params['paramsImage']
+    self.socket = params['socket']
     if 'addFeatures' == nameProcess:
       self.runProcess = self.addFeatures
       self.paramSmooth = params['paramSmooth']
@@ -63,17 +53,17 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
     else:
       self.runProcess = None
 
-  def setInterfaceDBus(self):
-    if not self.name_bus['uri'] in self.session_bus.list_names():
-      return { 'isOk': False, 'msg': "Run IBAMA Plugin, 'Tools/IBAMA/Service for save the selected regions', in GIMP!" }
+  def getDataServer(self, nameFunction, filename):
+    data = { 'function': nameFunction, 'filename': filename  }
+    sdata = json.dumps( data )
+    try:
+      self.socket.send( sdata )
+      sdata = self.socket.recv(4096)
+    except socket.error as msg_socket:
+      msg = "Error connection GIMP Server: %s. Running plugin in GIMP"  % str( msg_socket )
+      return { 'isOk': False, 'msg': msg }
 
-    if self.idbus is None:
-      del self.idbus
-      del self.proxyDBus
-    self.proxyDBus = self.session_bus.get_object( self.name_bus['uri'], self.name_bus['path'] )
-    self.idbus = dbus.Interface( self.proxyDBus, self.name_bus['uri'] )
-
-    return { 'isOk': True }
+    return json.loads( sdata )
 
   def finishedWarning(self, msg):
     typeMsg = QgsGui.QgsMessageBar.WARNING
@@ -188,14 +178,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
     msg = "Creating features in QGIS..."
     self.messageStatus.emit( { 'type': QgsGui.QgsMessageBar.INFO, 'msg': msg } )
 
-    vreturn = self.setInterfaceDBus()
-    if not vreturn['isOk']:
-      self.finishedWarning( vreturn['msg'] )
-      return
-    if self.isKilled:
-      self.finishedWarning( "Processing is stopped by user" )
-      return
-    pImgSel = json.loads( str( self.idbus.create_selection_image( filename ) ) )
+    pImgSel = self.getDataServer( 'create_selection_image', filename )
     if not pImgSel['isOk']:
       self.finishedWarning( pImgSel['msg'] )
       return
@@ -297,17 +280,10 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       msg = "Adding image '%s' in GIMP..." % filename
     self.messageStatus.emit( { 'type': QgsGui.QgsMessageBar.INFO, 'msg': msg } )
 
-    vreturn = self.setInterfaceDBus()
-    if not vreturn['isOk']:
-      endWarning( vreturn['msg'] )
-      return
-    if self.isKilled:
-      endWarning( "Processing is stopped by user" )
-      return
     if isView:
-      vreturn = json.loads( str( self.idbus.add_image_overwrite( filename ) ) )
+      vreturn = self.getDataServer( 'add_image_overwrite', filename )
     else:
-      vreturn = json.loads( str( self.idbus.add_image( filename ) ) )
+      vreturn = self.getDataServer( 'add_image', filename )
     if not vreturn['isOk']:
       endWarning( vreturn['msg'] )
       return
@@ -321,7 +297,9 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
     if self.runProcess is None:
       msg = "ERROR in Script"
       self.messageStatus.emit( { 'type': QgsGui.QgsMessageBar.CRITICAL, 'msg': msg } )
+      self.finished.emit( { 'isOk': False } )
       return
+
     self.runProcess()
 
 class GimpSelectionFeature(QtCore.QObject):
@@ -330,12 +308,9 @@ class GimpSelectionFeature(QtCore.QObject):
     super(GimpSelectionFeature, self).__init__()
     self.dockWidgetGui = dockWidgetGui
     self.paramsImage =  self.last_filename = self.layerPolygon = self.layerImage = self.layerChange = None
-    self.thread = self.forceStopThread = self.hasConnect = None
+    self.thread = self.socket = self.forceStopThread = self.hasConnect = None
     ( self.iface, self.canvas,  self.msgBar ) = ( iface, iface.mapCanvas(), iface.messageBar() )
-    self.session_bus = dbus.SessionBus()
-    uri = "gimp.plugin.dbus.selection"
-    name_bus = { 'uri': uri, 'path': "/%s" % uri.replace( '.', '/' ) }
-    self.worker = WorkerGimpSelectionFeature( self.session_bus, name_bus )
+    self.worker = WorkerGimpSelectionFeature()
 
     self.initThread()
     self._connect()
@@ -346,7 +321,8 @@ class GimpSelectionFeature(QtCore.QObject):
     self.dockWidgetGui.chkIsView.setCheckState( QtCore.Qt.Checked )
 
   def __del__(self):
-    self.session_bus.close()
+    if not self.socket is None:
+      self.socket.close()
     self.finishThread()
     if not self.hasConnect:
       self._connect( False )
@@ -412,6 +388,17 @@ class GimpSelectionFeature(QtCore.QObject):
       tip = layer.source()
     lblLayer.setText( text )
     lblLayer.setToolTip( tip )
+
+  def setSocket(self):
+    if self.socket is None:
+      self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+      try:
+        self.socket.connect( ( '', 10000) ) # ( localhost, port)
+      except socket.error, e:
+        msg = "Run IBAMA Plugin, 'Tools/IBAMA/Service for save the selected regions', in GIMP!"
+        self.socket = None
+        return { 'isOk': False, 'msg': msg}
+      return { 'isOk': True }
 
   @QtCore.pyqtSlot(dict)
   def finishedWorker(self, data):
@@ -569,6 +556,13 @@ class GimpSelectionFeature(QtCore.QObject):
     if self.paramsImage is None:
       return
 
+    if self.socket is None:
+      vreturn = self.setSocket()
+      if not vreturn['isOk']:
+        msgStatus = { 'msg': vreturn['msg'], 'type': QgsGui.QgsMessageBar.WARNING } 
+        self.messageStatusWorker( msgStatus )
+        return
+
     if self.last_filename is None:
        self.last_filename = self.paramsImage['filename']
     else:
@@ -592,10 +586,10 @@ class GimpSelectionFeature(QtCore.QObject):
     self.dockWidgetGui.lblStatus.setText( "Add image..." )
     self.setEnabledWidgetAdd( False )
 
-    params = { 'paramsImage': self.paramsImage }
+    params = { 'paramsImage': self.paramsImage, 'socket': self.socket }
     self.worker.setDataRun( params,  'addImageGimp')
-    #self.thread.start()
-    self.worker.addImageGimp() # DEBUG   QtCore.qDebug("DEBUG 1")
+    self.thread.start()
+    #self.worker.run() # DEBUG   QtCore.qDebug("DEBUG 1")
 
   @QtCore.pyqtSlot()
   def addFeatures(self):
@@ -612,6 +606,13 @@ class GimpSelectionFeature(QtCore.QObject):
 
     if self.paramsImage is None:
       return
+
+    if self.socket is None:
+      vreturn = self.setSocket()
+      if not vreturn['isOk']:
+        msgStatus = { 'msg': vreturn['msg'], 'type': QgsGui.QgsMessageBar.WARNING } 
+        self.messageStatusWorker( msgStatus )
+        return
 
     checkState = self.dockWidgetGui.chkIsView.checkState()
     self.paramsImage['view']['checkState'] = checkState
@@ -640,13 +641,14 @@ class GimpSelectionFeature(QtCore.QObject):
 
     params = {
       'paramsImage': self.paramsImage,
+      'socket': self.socket,
       'paramSmooth': { 'iter': vinter, 'offset': offset },
       'paramsSieve': { 'threshold': threshold, 'connectedness': 4 },
       'layerPolygon': self.layerPolygon
     }
     self.worker.setDataRun( params, 'addFeatures' )
-    #self.thread.start()
-    self.worker.addFeatures() # DEBUG
+    self.thread.start()
+    #self.worker.run() # DEBUG   QtCore.qDebug("DEBUG 1")
 
   @QtCore.pyqtSlot()
   def stopTransfer(self):
