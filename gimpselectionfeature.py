@@ -31,6 +31,7 @@ from gdalconst import ( GA_ReadOnly, GA_Update )
 class WorkerGimpSelectionFeature(QtCore.QObject):
   finished = QtCore.pyqtSignal(dict)
   messageStatus = QtCore.pyqtSignal(dict)
+  socketnone = QtCore.pyqtSignal()
 
   def __init__(self):
     super(WorkerGimpSelectionFeature, self).__init__()
@@ -60,7 +61,13 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       self.socket.send( sdata )
       sdata = self.socket.recv(4096)
     except socket.error as msg_socket:
-      msg = "Error connection GIMP Server: %s. Running plugin in GIMP"  % str( msg_socket )
+      msg = "Error connection GIMP Server: %s. Run IBAMA plugin in GIMP"  % str( msg_socket )
+      self.socketnone.emit()
+      return { 'isOk': False, 'msg': msg }
+    
+    if len( sdata ) == 0:
+      msg = "Run IBAMA Plugin, 'Tools/IBAMA/Service for save the selected regions', in GIMP!"
+      self.socketnone.emit()
       return { 'isOk': False, 'msg': msg }
 
     return json.loads( sdata )
@@ -286,6 +293,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       vreturn = self.getDataServer( 'add_image', filename )
     if not vreturn['isOk']:
       endWarning( vreturn['msg'] )
+      self.finished.emit( { 'isOk': False } )
       return
 
     msg = "GIMP: %s" % vreturn['msg']
@@ -344,7 +352,8 @@ class GimpSelectionFeature(QtCore.QObject):
     ss = [
       { 'signal': self.thread.started, 'slot': self.worker.run },
       { 'signal': self.worker.finished, 'slot': self.finishedWorker },
-      { 'signal': self.worker.messageStatus, 'slot': self.messageStatusWorker }
+      { 'signal': self.worker.messageStatus, 'slot': self.messageStatusWorker },
+      { 'signal': self.worker.socketnone, 'slot': self.setSocketNone }
     ]
     if isConnect:
       for item in ss:
@@ -436,11 +445,15 @@ class GimpSelectionFeature(QtCore.QObject):
     if data.has_key('bboxFeats'):
       zoomToBBox( data['bboxFeats'] )
       return
-
+    
   @QtCore.pyqtSlot( dict )
   def messageStatusWorker(self, msgStatus):
     self.msgBar.popWidget()
     self.msgBar.pushMessage( self.nameModulus, msgStatus['msg'], msgStatus['type'], 5 )
+
+  @QtCore.pyqtSlot()
+  def setSocketNone(self):
+    self.socket = None
 
   @QtCore.pyqtSlot(str)
   def removeLayer(self, sIdLayer):
