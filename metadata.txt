@@ -15,7 +15,7 @@ email=motta.luiz@gmail.com
 changelog=0.2 (2016-06-19)
   - Change DBUS to Socket
 0.1 (2016-06-16)
-- Start of plugin
+  - Start of plugin
 tags=GIMP,raster, IBAMA
 homepage=https://github.com/lmotta/gimpselectionfeature_plugin
 tracker=http://hub.qgis.org/projects/gimpselectionfeature

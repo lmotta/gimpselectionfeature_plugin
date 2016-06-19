@@ -13,7 +13,7 @@ Luiz Motta
 
 ## Changelog
 - 2016-06-19
-Change DBUS to Scocket
+Change DBUS to Socket
 - 2016-06-16
 Started plugin
 
