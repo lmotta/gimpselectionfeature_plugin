@@ -24,7 +24,7 @@ from gimpfu import gimp, pdb, register, main
 from gimpshelf import shelf as gimp_shelf
 
 from os import path
-import socket, json, gobject
+import socket, json
 
 # DEBUG
 pydev_path = '/home/lmotta/eclipse/plugins/org.python.pydev_3.9.2.201502050007/pysrc/'
