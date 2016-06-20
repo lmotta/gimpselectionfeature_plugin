@@ -59,7 +59,7 @@ class SocketService(object):
   def run(self, image):
     # Socket
     try:
-      self.sock.bind( ( 'localhost', self.port ) )
+      self.sock.bind( ( '127.0.0.1', self.port ) )
     except socket.error as msg_socket:
       msg = "Socket Error: %s" % str( msg_socket )
       gimp.message( "%s: %s!" % ( self.titleServer, msg ) )
