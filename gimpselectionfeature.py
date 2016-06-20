@@ -219,7 +219,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
     srsLayerPolygon = osr.SpatialReference()
     srsLayerPolygon.ImportFromWkt( self.layerPolygon.crs().toWkt() )
 
-    feat = QgsCore.QgsFeature( self.layerPolygon.pendingFields() )
+    feat = QgsCore.QgsFeature( self.layerPolygon.dataProvider().fields() )
     addAttribute( feat )
 
     isIniEditable = self.layerPolygon.isEditable()
@@ -431,7 +431,7 @@ class GimpSelectionFeature(QtCore.QObject):
       highlight()
 
     self.dockWidgetGui.lblStatus.clear()
-    
+
     self.thread.quit()
     if self.worker.isKilled: 
       self.thread.wait()
@@ -659,8 +659,8 @@ class GimpSelectionFeature(QtCore.QObject):
       'layerPolygon': self.layerPolygon
     }
     self.worker.setDataRun( params, 'addFeatures' )
-    self.thread.start()
-    #self.worker.run() # DEBUG   QtCore.qDebug("DEBUG 1")
+    #self.thread.start()
+    self.worker.run() # DEBUG   QtCore.qDebug("DEBUG 1")
 
   @QtCore.pyqtSlot()
   def stopTransfer(self):

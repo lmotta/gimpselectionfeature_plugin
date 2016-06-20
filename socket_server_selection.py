@@ -89,7 +89,7 @@ class SocketService(object):
 
       if not data.has_key( 'function' ):
         continue
-      
+
       self.filename = data['filename']
       functions = {
         'add_image':              self.add_image,
@@ -97,7 +97,7 @@ class SocketService(object):
         'create_selection_image': self.create_selection_image
       }
       functions[ data['function'] ]()
-      
+
   def existImage(self):
     if self.addedImages.has_key( self.filename ):
       image = self.addedImages[ self.filename ]['image']
@@ -190,7 +190,7 @@ class SocketService(object):
     gimp.message( "%s: Stopped!" % self.titleServer)
     gimp_shelf['socket_server'] = False
     self.conn = None
-    
+
 
 def run(image, drawable):
   
