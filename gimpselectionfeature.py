@@ -25,8 +25,7 @@ from os import path
 from PyQt4 import ( QtGui, QtCore )
 from qgis import ( core as QgsCore, gui as QgsGui )
 
-from osgeo import ( gdal, ogr, osr )
-from gdalconst import ( GA_ReadOnly, GA_Update )
+from osgeo import ( gdal, ogr, osr, gdalconst )
 
 class WorkerGimpSelectionFeature(QtCore.QObject):
   finished = QtCore.pyqtSignal(dict)
@@ -81,7 +80,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
 
   def addFeatures(self):
     def setGeorefImage():
-      ds = gdal.Open( pImgSel['filename'], GA_Update )
+      ds = gdal.Open( pImgSel['filename'], gdalconst.GA_Update )
       if gdal.GetLastErrorType() != 0:
         return { 'isOk': False, 'msg': gdal.GetLastErrorMsg() }
 
@@ -111,7 +110,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       return { 'isOk': True }
 
     def polygonizeSelectionImage():
-      ds_img = gdal.Open( pImgSel['filename'], GA_ReadOnly )
+      ds_img = gdal.Open( pImgSel['filename'], gdalconst.GA_ReadOnly )
       if gdal.GetLastErrorType() != 0:
         return { 'isOk': False, 'msg': gdal.GetLastErrorMsg() }
       band = ds_img.GetRasterBand( 1 )
@@ -253,7 +252,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
   def addImageGimp(self):
     def createViewImage():
       def addGeoInfo():
-        ds = gdal.Open( filename, GA_Update )
+        ds = gdal.Open( filename, gdalconst.GA_Update )
         ds.SetProjection( self.paramsImage['wktProj'] )
         res = self.paramsImage['res']
         ds.SetGeoTransform( [ p_e.xMinimum(), res[0], 0, p_e.yMaximum(), 0, -1*res[1] ] )
