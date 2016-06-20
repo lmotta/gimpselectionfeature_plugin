@@ -25,6 +25,10 @@ from qgis import gui as QgsGui
 
 from gimpselectionfeature import ( DockWidgetGimpSelectionFeature, GimpSelectionFeature )
 
+
+# darwin is MAC
+# http://gimpforums.com/thread-what-is-my-gimp-profile-and-where-do-i-find-it
+
 def classFactory(iface):
   return GimpSelectionFeaturePlugin( iface )
 
@@ -42,6 +46,21 @@ class GimpSelectionFeaturePlugin:
         l_dirGimp = [ f for f in os.listdir( dirHome ) if re.match( mask, f)    ]
         return { 'isOk': False } if len( l_dirGimp ) == 0 else { 'isOk': True, 'dirGimp': os.path.join( dirHome, l_dirGimp[0] ) }
 
+      def getDirGimpOSX():
+        #  /Users/{your_id}/Library/GIMP/2.8/ or
+        #   /Users/{your_id}/Library/Application Support/GIMP/2.8/ 
+        mask = r"[0-9]+\.[0-9]+"
+        
+        dirHome_libray = "%s/Library" % dirHome
+        dirHome_osx = "%s/GIMP" % dirHome_libray
+        if not os.path.exists( dirHome_osx ):
+          dirHome_osx = "%s/Application Support/GIMP" % dirHome_libray
+          if not os.path.exists( dirHome_osx ):
+            return { 'isOk': False, 'msg': "Not found diretory GIMP in '%s'" % dirHome_libray }
+        
+        l_dirGimp = [ f for f in os.listdir( dirHome_osx ) if re.match( mask, f)    ]
+        return { 'isOk': False } if len( l_dirGimp ) == 0 else { 'isOk': True, 'dirGimp': os.path.join( dirHome_osx, l_dirGimp[0] ) }
+
       def copyNewPlugin():
         shutil.copy2( gimpPlugin, gimpPluginInstall )
         if sys.platform != 'win32': # Add executable
@@ -51,9 +70,18 @@ class GimpSelectionFeaturePlugin:
       nameDirPlugin = 'plug-ins'
       namePlugin = 'socket_server_selection.py'
       dirHome = os.path.expanduser('~')
-      vreturn = getDirGimp()
+      functionsDirGimp = {
+          'win32': getDirGimp,
+          'linux2': getDirGimp,
+          'darwin': getDirGimpOSX
+      }
+      if not sys.platform in functionsDirGimp.keys():
+        self.exitsPluginGimp = { 'isOk': False, 'msg': "Not found type System (Windows, Linux or OSX), value system is '%s'" % sys.platform }
+        return
+      vreturn = functionsDirGimp[ sys.platform ]()
       if not vreturn['isOk']:
         self.exitsPluginGimp = { 'isOk': False, 'msg': "Not found diretory GIMP in '%s'" % dirHome }
+        return
       dirPluginGimp = os.path.join( vreturn['dirGimp'], nameDirPlugin )
       if not os.path.exists( dirPluginGimp ):
         self.exitsPluginGimp = { 'isOk': False, 'msg': "Not found plugin's diretory in GIMP in '%s'" % dirPluginGimp }
