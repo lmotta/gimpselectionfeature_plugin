@@ -59,17 +59,17 @@ class SocketService(object):
   def run(self, image):
     # Socket
     try:
-      self.sock.bind( ( '', self.port ) )
+      self.sock.bind( ( 'localhost', self.port ) )
     except socket.error as msg_socket:
       msg = "Socket Error: %s" % str( msg_socket )
       gimp.message( "%s: %s!" % ( self.titleServer, msg ) )
       self.quit()
       return
     self.sock.listen( 1 )
-    
+
     gimp.message( "'%s' is running..." % self.titleServer )
     gimp_shelf['socket_server'] = True  
-    
+
     self.filename = image.filename
     vreturn = self.isTifImage()
     if not vreturn['isOk']:
