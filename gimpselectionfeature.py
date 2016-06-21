@@ -155,7 +155,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
 
     def addAttribute(feat):
       self.idAdd += 1
-      sdatetime = datetime.datetime.now().strftime( "%Y-%m-%d %H:%M:%s")
+      sdatetime = str( datetime.datetime.now() )
       feat.setAttribute('image', self.paramsImage['filename'] )
       feat.setAttribute('datetime', sdatetime )
       feat.setAttribute('crs', self.paramsImage['desc_crs'] )
@@ -601,7 +601,7 @@ class GimpSelectionFeature(QtCore.QObject):
     params = { 'paramsImage': self.paramsImage, 'socket': self.socket }
     self.worker.setDataRun( params,  'addImageGimp')
     self.thread.start()
-    #self.worker.run() # DEBUG   QtCore.qDebug("DEBUG 1")
+    #self.worker.run() # QtCore.qDebug("DEBUG 1")
 
   @QtCore.pyqtSlot()
   def addFeatures(self):
@@ -659,8 +659,8 @@ class GimpSelectionFeature(QtCore.QObject):
       'layerPolygon': self.layerPolygon
     }
     self.worker.setDataRun( params, 'addFeatures' )
-    #self.thread.start()
-    self.worker.run() # DEBUG   QtCore.qDebug("DEBUG 1")
+    self.thread.start()
+    #self.worker.run() # QtCore.qDebug("DEBUG 1")
 
   @QtCore.pyqtSlot()
   def stopTransfer(self):
