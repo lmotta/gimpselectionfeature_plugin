@@ -41,25 +41,14 @@ class GimpSelectionFeaturePlugin:
 
   def initGui(self):
     def setExistsPluginGimp():
-      def getDirGimp():
-        mask = r"\.gimp-[0-9]+\.[0-9]+"
-        l_dirGimp = [ f for f in os.listdir( dirHome ) if re.match( mask, f)    ]
-        return { 'isOk': False } if len( l_dirGimp ) == 0 else { 'isOk': True, 'dirGimp': os.path.join( dirHome, l_dirGimp[0] ) }
-
-      def getDirGimpOSX():
-        #  /Users/{your_id}/Library/GIMP/2.8/ or
-        #   /Users/{your_id}/Library/Application Support/GIMP/2.8/ 
-        mask = r"[0-9]+\.[0-9]+"
-        
-        dirHome_libray = "%s/Library" % dirHome
-        dirHome_osx = "%s/GIMP" % dirHome_libray
-        if not os.path.exists( dirHome_osx ):
-          dirHome_osx = "%s/Application Support/GIMP" % dirHome_libray
-          if not os.path.exists( dirHome_osx ):
-            return { 'isOk': False, 'msg': "Not found diretory GIMP in '%s'" % dirHome_libray }
-        
-        l_dirGimp = [ f for f in os.listdir( dirHome_osx ) if re.match( mask, f)    ]
-        return { 'isOk': False } if len( l_dirGimp ) == 0 else { 'isOk': True, 'dirGimp': os.path.join( dirHome_osx, l_dirGimp[0] ) }
+      def getDirPluginGimp():
+        # ~/.gimp-2.8/plug-ins/  ~/Library/GIMP/2.8/  ~/Library/Application Support/GIMP/2.8/
+        l_dirPlugin = []
+        mask = r".*gimp.[0-9]+\.[0-9]+%s%s" % ( os.sep, nameDirPlugin )
+        for root, dirs, files in os.walk( dirHome ):
+          if re.match( mask, root, re.IGNORECASE):
+            l_dirPlugin.append( root )
+        return l_dirPlugin[0] if l_dirPlugin > 0 else None
 
       def copyNewPlugin():
         shutil.copy2( gimpPlugin, gimpPluginInstall )
@@ -67,25 +56,15 @@ class GimpSelectionFeaturePlugin:
           st =  os.stat( gimpPluginInstall )
           os.chmod( gimpPluginInstall, st.st_mode | stat.S_IEXEC )
 
-      nameDirPlugin = 'plug-ins'
-      namePlugin = 'socket_server_selection.py'
       dirHome = os.path.expanduser('~')
-      functionsDirGimp = {
-          'win32': getDirGimp,
-          'linux2': getDirGimp,
-          'darwin': getDirGimpOSX
-      }
-      if not sys.platform in functionsDirGimp.keys():
-        self.exitsPluginGimp = { 'isOk': False, 'msg': "Not found type System (Windows, Linux or OSX), value system is '%s'" % sys.platform }
+      nameDirPlugin = "plug-ins"
+      dirPluginGimp = getDirPluginGimp()
+      if dirPluginGimp is None:
+        msg = "Not found diretory 'GIMP' or 'GIMP %s' in '%s'" % ( nameDirPlugin, dirHome )
+        self.exitsPluginGimp = { 'isOk': False, 'msg': msg }
         return
-      vreturn = functionsDirGimp[ sys.platform ]()
-      if not vreturn['isOk']:
-        self.exitsPluginGimp = { 'isOk': False, 'msg': "Not found diretory GIMP in '%s'" % dirHome }
-        return
-      dirPluginGimp = os.path.join( vreturn['dirGimp'], nameDirPlugin )
-      if not os.path.exists( dirPluginGimp ):
-        self.exitsPluginGimp = { 'isOk': False, 'msg': "Not found plugin's diretory in GIMP in '%s'" % dirPluginGimp }
-        return
+
+      namePlugin = 'socket_server_selection.py'
       gimpPlugin = os.path.join( os.path.dirname(__file__), namePlugin )
       gimpPluginInstall = os.path.join( dirPluginGimp, namePlugin )
       if not os.path.exists( gimpPluginInstall ) or not filecmp.cmp( gimpPlugin, gimpPluginInstall ):
