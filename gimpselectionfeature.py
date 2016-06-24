@@ -247,7 +247,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
     msg = "Added %d features in '%s'" % ( totalFeats, self.layerPolygon.name() )
     self.messageStatus.emit( { 'type': QgsGui.QgsMessageBar.INFO, 'msg': msg  } )
     bboxFeats = QgsCore.QgsRectangle( envFeats[0], envFeats[2], envFeats[1], envFeats[3] )
-    self.finished.emit( { 'isOk': True, 'bboxFeats': bboxFeats } )
+    self.finished.emit( { 'isOk': True, 'bboxFeats': bboxFeats, 'lastAdd': self.idAdd } )
 
   def addImageGimp(self):
     def createViewImage():
@@ -314,7 +314,8 @@ class GimpSelectionFeature(QtCore.QObject):
   def __init__(self, iface, dockWidgetGui):
     super(GimpSelectionFeature, self).__init__()
     self.dockWidgetGui = dockWidgetGui
-    self.paramsImage =  self.last_filename = self.layerPolygon = self.layerImage = self.layerChange = None
+    self.paramsImage =  self.last_filename = self.layerPolygon = self.lastAdd = None
+    self.layerImage = self.layerChange = None
     self.thread = self.socket = self.forceStopThread = self.hasConnect = None
     ( self.iface, self.canvas,  self.msgBar ) = ( iface, iface.mapCanvas(), iface.messageBar() )
     self.worker = WorkerGimpSelectionFeature()
@@ -368,6 +369,7 @@ class GimpSelectionFeature(QtCore.QObject):
       { 'signal': self.dockWidgetGui.btnSelectImage.clicked, 'slot': self.setParamsImage },
       { 'signal': self.dockWidgetGui.btnAddImage.clicked, 'slot': self.addImageGimp },
       { 'signal': self.dockWidgetGui.btnAddFeatures.clicked, 'slot': self.addFeatures },
+      { 'signal': self.dockWidgetGui.btnRemoveLastFeatures.clicked, 'slot': self.removeLastFeatures },
       { 'signal': self.dockWidgetGui.btnStopTransfer.clicked, 'slot': self.stopTransfer },
     ]
     if isConnect:
@@ -383,10 +385,13 @@ class GimpSelectionFeature(QtCore.QObject):
     wgts = [ self.dockWidgetGui.chkIsView,
              self.dockWidgetGui.btnAddImage,
              self.dockWidgetGui.btnAddFeatures,
+             self.dockWidgetGui.btnRemoveLastFeatures,
              self.dockWidgetGui.gbxSettingFeatures
            ]
     map( lambda item: item.setEnabled( isEnabled ), wgts )
     self.dockWidgetGui.btnStopTransfer.setEnabled( not isEnabled )
+    if self.lastAdd is None:
+      self.dockWidgetGui.btnRemoveLastFeatures.setEnabled( False )
 
   def setLabelLayer(self, lblLayer, layer=None):
     text = ""
@@ -435,6 +440,9 @@ class GimpSelectionFeature(QtCore.QObject):
     self.thread.quit()
     if self.worker.isKilled: 
       self.thread.wait()
+
+    if data.has_key('lastAdd'):
+      self.lastAdd = data['lastAdd']
 
     self.setEnabledWidgetAdd( True )
     if not data['isOk']:
@@ -663,6 +671,24 @@ class GimpSelectionFeature(QtCore.QObject):
     #self.worker.run() # QtCore.qDebug("DEBUG 1")
 
   @QtCore.pyqtSlot()
+  def removeLastFeatures(self):
+    isIniEditable = self.layerPolygon.isEditable()
+    if not isIniEditable:
+      self.layerPolygon.startEditing()
+    exp = QgsCore.QgsExpression( '"id_add" = %d' % self.lastAdd )
+    request = QgsCore.QgsFeatureRequest( exp )
+    request.setFlags( QgsCore.QgsFeatureRequest.NoGeometry )
+    it = self.layerPolygon.getFeatures( request )
+    for feat in it:
+      self.layerPolygon.deleteFeature( feat.id()  )
+    self.layerPolygon.commitChanges()
+    if isIniEditable:
+      self.layerPolygon.startEditing()
+    self.layerPolygon.updateExtents()
+    self.dockWidgetGui.btnRemoveLastFeatures.setEnabled( False )
+    self.lastAdd = None
+
+  @QtCore.pyqtSlot()
   def stopTransfer(self):
     def forceStop():
       if self.forceStopThread:
@@ -729,20 +755,24 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
       wgt = QtGui.QWidget( self )
       wgt.setAttribute(QtCore.Qt.WA_DeleteOnClose)
       # Image
+      width = 180
       self.lblCurImage = QtGui.QLabel("", wgt )
-      self.btnSelectImage = QtGui.QPushButton("Set the layer below how current:", wgt )
-      self.lblSelectImage = QtGui.QLabel("Select image in legend", wgt )
+      self.lblCurImage.setMaximumWidth(width )
+      self.btnSelectImage = QtGui.QPushButton("Set current:", wgt )
+      self.lblSelectImage = QtGui.QLabel("Select in legend", wgt )
+      self.lblSelectImage.setMaximumWidth( width )
       l_wts = [
         { 'widget': QtGui.QLabel("Current:", wgt ), 'row': 0, 'col': 0 },
-        { 'widget': self.lblCurImage,               'row': 1, 'col': 0 },
-        { 'widget': self.btnSelectImage,            'row': 2, 'col': 0 },
-        { 'widget': self.lblSelectImage,            'row': 3, 'col': 0 }
+        { 'widget': self.lblCurImage,               'row': 0, 'col': 1 },
+        { 'widget': self.btnSelectImage,            'row': 1, 'col': 0 },
+        { 'widget': self.lblSelectImage,            'row': 1, 'col': 1 }
       ]
       gbxImage = getGroupBox( "Image", wgt, l_wts)
       # Transfer
       self.chkIsView = QtGui.QCheckBox("Image view", wgt)
       self.btnAddImage = QtGui.QPushButton("Add image", wgt )
       self.btnAddFeatures = QtGui.QPushButton("Add features", wgt )
+      self.btnRemoveLastFeatures = QtGui.QPushButton("Remove last features", wgt )
       self.sbSieveThreshold = getSpinBoxSieve( wgt, 5 )
       self.spSmoothOffset = getSpinBoxOffset( wgt, 25 )
       self.sbSmoothIteration  = getSpinBoxIteration( wgt, 1)
@@ -762,20 +792,23 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
         { 'widget': gbxSmooth,                          'row': 1, 'col': 0, 'spam': spamSmooth }
       ]
       self.gbxSettingFeatures = getGroupBox( "Setting", wgt, l_wts)
+      spamSetting = { 'row': 1, 'col': 2 }
       l_wts = [
-        { 'widget': self.btnAddFeatures,     'row': 0, 'col': 0 },
-        { 'widget': self.gbxSettingFeatures, 'row': 1, 'col': 0 }
+        { 'widget': self.btnAddFeatures,        'row': 0, 'col': 0 },
+        { 'widget': self.btnRemoveLastFeatures, 'row': 0, 'col': 1 },
+        { 'widget': self.gbxSettingFeatures,    'row': 1, 'col': 0, 'spam': spamSetting }
       ]
       gbxGQ = getGroupBox( "GIMP->QGIS", wgt, l_wts)
       l_wts = [
         { 'widget': self.btnAddImage,        'row': 0, 'col': 0 }
       ]
       gbxQG = getGroupBox( "QGIS->GIMP", wgt, l_wts)
+      spamGroup = { 'row': 1, 'col': 2 }
       l_wts = [
         { 'widget': self.chkIsView,       'row': 0, 'col': 0 },
-        { 'widget': gbxQG,                'row': 1, 'col': 0 },
-        { 'widget': gbxGQ,                'row': 2, 'col': 0 },
-        { 'widget': self.btnStopTransfer, 'row': 3, 'col': 0 }
+        { 'widget': self.btnStopTransfer, 'row': 0, 'col': 1 },
+        { 'widget': gbxQG,                'row': 1, 'col': 0, 'spam': spamGroup },
+        { 'widget': gbxGQ,                'row': 2, 'col': 0, 'spam': spamGroup }
       ]
       gbxTransfer = getGroupBox( "Transfer", wgt, l_wts)
       #
