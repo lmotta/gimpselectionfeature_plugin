@@ -48,7 +48,7 @@ class GimpSelectionFeaturePlugin:
         for root, dirs, files in os.walk( dirHome ):
           if re.match( mask, root, re.IGNORECASE):
             l_dirPlugin.append( root )
-        return l_dirPlugin[0] if l_dirPlugin > 0 else None
+        return l_dirPlugin[0] if len( l_dirPlugin ) > 0 else None
 
       def copyNewPlugin():
         shutil.copy2( gimpPlugin, gimpPluginInstall )
