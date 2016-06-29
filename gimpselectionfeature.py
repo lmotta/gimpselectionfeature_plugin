@@ -408,7 +408,7 @@ class GimpSelectionFeature(QtCore.QObject):
       try:
         self.socket.connect( ( '127.0.0.1', 10000) ) # ( IP, port)
       except socket.error, e:
-        msg = "Run IBAMA Plugin, 'Tools/IBAMA/Service for save the selected regions', in GIMP!"
+        msg = "Run IBAMA Plugin, 'IBAMA/Service for save the selected regions', in GIMP!"
         self.socket = None
         return { 'isOk': False, 'msg': msg}
       return { 'isOk': True }

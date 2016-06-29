@@ -56,7 +56,7 @@ class SocketService(object):
       self.conn.close()
       self.conn = None
 
-  def run(self, image):
+  def run(self):
     # Socket
     try:
       self.sock.bind( ( '127.0.0.1', self.port ) )
@@ -69,11 +69,6 @@ class SocketService(object):
 
     gimp.message( "'%s' is running..." % self.titleServer )
     gimp_shelf['socket_server'] = True  
-
-    self.filename = image.filename
-    vreturn = self.isTifImage()
-    if not vreturn['isOk']:
-      gimp.message( "%s Running -- CLOSE and OPEN the TIF image!" % self.titleServer)
 
     self.conn, client = self.sock.accept()
     while True:
@@ -192,21 +187,21 @@ class SocketService(object):
     self.conn = None
 
 
-def run(image, drawable):
+def run():
   
   #startPyDevClient()
   if gimp_shelf.has_key('socket_server') and gimp_shelf['socket_server']:
     gimp.message( "WARNING: '%s' is already running!" % SocketService.titleServer)
     return
 
-  SocketService().run( image )
+  SocketService().run()
 
 register(
   "python_fu_socket_server",
   SocketService.titleServer, SocketService.titleServer,
   "Luiz Motta", "IBAMA", "2016",
-  "<Image>/Tools/IBAMA/%s" % SocketService.titleServer,
-  "*",
+  "<Toolbox>/IBAMA/%s" % SocketService.titleServer,
+  "",
   [],
   [],
   run
