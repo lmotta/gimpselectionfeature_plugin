@@ -26,9 +26,6 @@ from qgis import gui as QgsGui
 from gimpselectionfeature import ( DockWidgetGimpSelectionFeature, GimpSelectionFeature )
 
 
-# darwin is MAC
-# http://gimpforums.com/thread-what-is-my-gimp-profile-and-where-do-i-find-it
-
 def classFactory(iface):
   return GimpSelectionFeaturePlugin( iface )
 
@@ -43,12 +40,14 @@ class GimpSelectionFeaturePlugin:
     def setExistsPluginGimp():
       def getDirPluginGimp():
         # ~/.gimp-2.8/plug-ins/  ~/Library/GIMP/2.8/  ~/Library/Application Support/GIMP/2.8/
-        l_dirPlugin = []
-        mask = r".*gimp.[0-9]+\.[0-9]+%s%s" % ( os.sep, nameDirPlugin )
+        dirPlugin = None
+        mask = r".*gimp.[0-9]+.[0-9]+/%s" % nameDirPlugin # Linux Format
         for root, dirs, files in os.walk( dirHome ):
-          if re.match( mask, root, re.IGNORECASE):
-            l_dirPlugin.append( root )
-        return l_dirPlugin[0] if len( l_dirPlugin ) > 0 else None
+          if re.match( mask, root.replace('\\', '/'), re.IGNORECASE ):
+            dirPlugin = root
+            break
+
+        return dirPlugin
 
       def copyNewPlugin():
         shutil.copy2( gimpPlugin, gimpPluginInstall )

@@ -36,7 +36,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
     super(WorkerGimpSelectionFeature, self).__init__()
     self.isKilled = None
     self.runProcess = self.paramsImage =  None
-    self.paramSmooth = self.paramsSieve = self.layerPolygon = None
+    self.paramSmooth = self.paramsSieve = self.paramsAzimuth = self.layerPolygon = None
     self.socket = None
     self.idAdd = 0
 
@@ -47,6 +47,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       self.runProcess = self.addFeatures
       self.paramSmooth = params['paramSmooth']
       self.paramsSieve = params['paramsSieve']
+      self.paramsAzimuth  = params['paramsAzimuth']
       self.layerPolygon = params['layerPolygon']
     elif 'addImageGimp' == nameProcess:
       self.runProcess = self.addImageGimp
@@ -110,6 +111,47 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       return { 'isOk': True }
 
     def polygonizeSelectionImage():
+      def getGeomAzimuthTolerance(geom, threshold):
+        def changePolygon(polygon):
+          hasChange = False
+          for id in xrange( len( polygon ) ):
+            points = polygon[ id ]
+            if len( points ) < 4:
+              continue
+            ids_new = [ 0 ]
+            for i in xrange( 1, len( points ) -1 ):
+              aznew = azimuth( points[ ids_new[-1] ], points[ i ] )
+              az = azimuth( points[ i ], points[ i+1 ] )
+              if abs( az - aznew ) > threshold:
+                ids_new.append( i )
+            if len( ids_new ) < len( points ):
+              hasChange = True
+              ids_remove = list( set( range( len( points ) ) ) - set( ids_new ) )
+              ids_remove.sort()
+              ids_remove.reverse()
+              for i in xrange( len( ids_remove ) ):
+                del polygon[ id ][ ids_remove[ i ] ]
+      
+          return hasChange
+        vreturn = None
+        hasChange = False
+        if geom.isMultipart():
+          mp = geom.asMultiPolygon()
+          for id in xrange( len( mp) ):
+            if changePolygon( mp[ id ] ):
+              hasChange = True
+          vreturn = { 'hasChange': hasChange }
+          if hasChange:
+            vreturn['geom'] = QgsGeometry.fromMultiPolygon( mp )
+        else:
+          p = geom.asPolygon()
+          hasChange = changePolygon( p )
+          vreturn = { 'hasChange': hasChange }
+          if hasChange:
+            vreturn['geom'] = QgsGeometry.fromPolygon( p )
+  
+        return vreturn
+
       ds_img = gdal.Open( pImgSel['filename'], gdalconst.GA_ReadOnly )
       if gdal.GetLastErrorType() != 0:
         return { 'isOk': False, 'msg': gdal.GetLastErrorMsg() }
@@ -144,10 +186,23 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       if gdal.GetLastErrorType() != 0:
         return { 'isOk': False, 'msg': gdal.GetLastErrorMsg() }
 
+      # Get Geoms - Apply Azimuth tolerance
       geoms = []
       layer_poly.SetAttributeFilter("dn = 255")
-      for feat in layer_poly:
-        geoms.append( feat.GetGeometryRef().Clone() )
+      p_threshold = self.paramsAzimuth['threshold']
+      if p_threshold > 0:
+        p_threshold = float( p_threshold )
+        for feat in layer_poly:
+          geom = feat.GetGeometryRef()
+          vreturn = getGeomAzimuthTolerance( geom, p_threshold )
+          if vreturn['hasChange']:
+            geoms.append( vreturn['geom'] )
+          else:
+            geoms.append( geom.Clone() )
+      else:
+        for feat in layer_poly:
+          geoms.append( feat.GetGeometryRef().Clone() )
+
       ds_poly = layer_poly = None
 
       return { 'isOk': True, 'geoms': geoms }
@@ -655,6 +710,7 @@ class GimpSelectionFeature(QtCore.QObject):
     # paramSmooth: iter = interations, offset = 0.0 - 1.0(100%)
     # paramsSieve: threshold = Size in Pixel, connectedness = 4 or 8(diagonal)
     tSieve = self.dockWidgetGui.sbSieveThreshold.value() + 1
+    tAzimuth = self.dockWidgetGui.sbAzimuthThreshold.value()
     offset = self.dockWidgetGui.spSmoothOffset.value() / 100.0
     vinter = self.dockWidgetGui.sbSmoothIteration.value()
 
@@ -663,6 +719,7 @@ class GimpSelectionFeature(QtCore.QObject):
       'socket': self.socket,
       'paramSmooth': { 'iter': vinter, 'offset': offset },
       'paramsSieve': { 'threshold': tSieve, 'connectedness': 4 },
+      'paramsAzimuth': { 'threshold': tAzimuth },
       'layerPolygon': self.layerPolygon
     }
     self.worker.setDataRun( params, 'addFeatures' )
@@ -736,6 +793,14 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
         sp.setValue(value)
         return sp
 
+      def getSpinBoxAzimuth(wgt, value):
+        sp = QtGui.QSpinBox( wgt)
+        sp.setRange(0, 10)
+        sp.setSingleStep(1)
+        sp.setSuffix(' degrees')
+        sp.setValue(value)
+        return sp
+
       def getSpinBoxIteration(wgt, value):
         sp = QtGui.QSpinBox( wgt)
         sp.setRange(0, 3)
@@ -773,6 +838,7 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
       self.btnAddFeatures = QtGui.QPushButton("Add features", wgt )
       self.btnRemoveLastFeatures = QtGui.QPushButton("Remove last features", wgt )
       self.sbSieveThreshold = getSpinBoxSieve( wgt, 5 )
+      self.sbAzimuthThreshold = getSpinBoxAzimuth( wgt, 0 )
       self.spSmoothOffset = getSpinBoxOffset( wgt, 25 )
       self.sbSmoothIteration  = getSpinBoxIteration( wgt, 1)
       self.btnStopTransfer = QtGui.QPushButton("Stop transfer", wgt )
@@ -788,7 +854,9 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
       l_wts = [
         { 'widget': QtGui.QLabel("Remove Area:", wgt ), 'row': 0, 'col': 0 },
         { 'widget': self.sbSieveThreshold,              'row': 0, 'col': 1 },
-        { 'widget': gbxSmooth,                          'row': 1, 'col': 0, 'spam': spamSmooth }
+        { 'widget': QtGui.QLabel("Remove Azimuth:", wgt ),     'row': 1, 'col': 0 },
+        { 'widget': self.sbAzimuthThreshold,            'row': 1, 'col': 1 },
+        { 'widget': gbxSmooth,                          'row': 2, 'col': 0, 'spam': spamSmooth }
       ]
       self.gbxSettingFeatures = getGroupBox( "Setting", wgt, l_wts)
       spamSetting = { 'row': 1, 'col': 2 }

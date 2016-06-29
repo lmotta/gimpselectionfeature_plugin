@@ -27,9 +27,10 @@ from os import path
 import socket, json
 
 # DEBUG
-pydev_path = '/home/lmotta/eclipse/plugins/org.python.pydev_3.9.2.201502050007/pysrc/'
 def startPyDevClient():
   import sys
+  eclipse_path = '/home/lmotta/.eclipse/org.eclipse.platform_4.6.0_1473617060_linux_gtk_x86_64'
+  pydev_path = "%s/%s" % ( eclipse_path, '/plugins/org.python.pydev_5.1.1.201606162013/pysrc' )
   sys.path.append(pydev_path)
   started = False
   try:
