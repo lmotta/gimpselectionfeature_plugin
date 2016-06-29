@@ -12,6 +12,7 @@ category=Raster
 author=Luiz Motta
 email=motta.luiz@gmail.com
 changelog=0.3 (2016-06-29)
+  - Added removed vertexs by Azimuth
   - Fixed when copy GIMP's plugin in Windows and not more need open a image to run Plugin in GIMP
   0.2 (2016-06-19)
   - Change DBUS to Socket

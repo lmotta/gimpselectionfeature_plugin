@@ -13,6 +13,7 @@ Luiz Motta
 
 ## Changelog
 - 2016-06-29
+Added removed vertexs by Azimuth,
 Fixed when copy GIMP's plugin in Windows and not more need open a image to run Plugin in GIMP
 - 2016-06-19
 Change DBUS to Socket
