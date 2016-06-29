@@ -607,8 +607,8 @@ class GimpSelectionFeature(QtCore.QObject):
 
     params = { 'paramsImage': self.paramsImage, 'socket': self.socket }
     self.worker.setDataRun( params,  'addImageGimp')
-    self.thread.start()
-    #self.worker.run() # QtCore.qDebug("DEBUG 1")
+    #self.thread.start()
+    self.worker.run() # QtCore.qDebug("DEBUG 1")
 
   @QtCore.pyqtSlot()
   def addFeatures(self):
