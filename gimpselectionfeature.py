@@ -18,7 +18,7 @@ email                : motta.luiz@gmail.com
  *                                                                         *
  ***************************************************************************/
 """
-import os, sys, json, datetime, socket
+import os, sys, json, datetime, socket, math
 
 from os import path
 
@@ -36,7 +36,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
     super(WorkerGimpSelectionFeature, self).__init__()
     self.isKilled = None
     self.runProcess = self.paramsImage =  None
-    self.paramSmooth = self.paramsSieve = self.layerPolygon = None
+    self.paramSmooth = self.paramsSieve = self.paramsAzimuth = self.layerPolygon = None
     self.socket = None
     self.idAdd = 0
 
@@ -47,6 +47,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       self.runProcess = self.addFeatures
       self.paramSmooth = params['paramSmooth']
       self.paramsSieve = params['paramsSieve']
+      self.paramsAzimuth  = params['paramsAzimuth']
       self.layerPolygon = params['layerPolygon']
     elif 'addImageGimp' == nameProcess:
       self.runProcess = self.addImageGimp
@@ -110,6 +111,50 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       return { 'isOk': True }
 
     def polygonizeSelectionImage():
+      def setGeomAzimuthTolerance(geom, threshold):
+        def changeRing(ring):
+          def azimuth(p1, p2):
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
+            az = math.atan2( dx, dy ) * 180.0 / math.pi
+            if az < 0.0:
+              az = 360.0 - abs( az )
+            return az
+          
+          if ring.GetPointCount() < 4:
+            return
+
+          points = ring.GetPoints()
+          ids_new = [ 0 ]
+          upperIdPoints = len( points ) -1
+          for i in xrange( 1, upperIdPoints ):
+            aznew = azimuth( points[ ids_new[-1] ], points[ i ] )
+            az = azimuth( points[ i ], points[ i+1 ] )
+            if abs( az - aznew ) > threshold:
+              ids_new.append( i )
+          ids_new.append( upperIdPoints )
+          if len( ids_new ) < len( points ):
+            ids_remove = list( set( range( len( points ) ) ) - set( ids_new ) )
+            ids_remove.sort()
+            ids_remove.reverse()
+            for i in xrange( len( ids_remove ) ):
+              del points[ ids_remove[ i ] ]
+            
+            ring.Empty()
+            for i in xrange( len( points ) ):
+              ring.SetPoint_2D( i, points[i][0], points[i][1])
+
+        numPolygons = geom.GetGeometryCount()
+        for id1 in xrange(  numPolygons ):
+          polygon = geom.GetGeometryRef( id1 )
+          numRings = polygon.GetGeometryCount()
+          if numRings == 0:
+            changeRing( polygon ) # Only Out ring! 
+          else:
+            for id2 in xrange(  numRings ):
+              ring = polygon.GetGeometryRef( id2)
+              changeRing( ring )
+
       ds_img = gdal.Open( pImgSel['filename'], gdalconst.GA_ReadOnly )
       if gdal.GetLastErrorType() != 0:
         return { 'isOk': False, 'msg': gdal.GetLastErrorMsg() }
@@ -144,10 +189,20 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       if gdal.GetLastErrorType() != 0:
         return { 'isOk': False, 'msg': gdal.GetLastErrorMsg() }
 
+      # Get Geoms - Apply Azimuth tolerance
       geoms = []
       layer_poly.SetAttributeFilter("dn = 255")
-      for feat in layer_poly:
-        geoms.append( feat.GetGeometryRef().Clone() )
+      p_threshold = self.paramsAzimuth['threshold']
+      if p_threshold > 0:
+        p_threshold = float( p_threshold )
+        for feat in layer_poly:
+          geom = feat.GetGeometryRef()
+          setGeomAzimuthTolerance( geom, p_threshold )
+          geoms.append( geom.Clone() )
+      else:
+        for feat in layer_poly:
+          geoms.append( feat.GetGeometryRef().Clone() )
+
       ds_poly = layer_poly = None
 
       return { 'isOk': True, 'geoms': geoms }
@@ -607,8 +662,8 @@ class GimpSelectionFeature(QtCore.QObject):
 
     params = { 'paramsImage': self.paramsImage, 'socket': self.socket }
     self.worker.setDataRun( params,  'addImageGimp')
-    #self.thread.start()
-    self.worker.run() # QtCore.qDebug("DEBUG 1")
+    self.thread.start()
+    #self.worker.run() # QtCore.qDebug("DEBUG 1")
 
   @QtCore.pyqtSlot()
   def addFeatures(self):
@@ -655,6 +710,7 @@ class GimpSelectionFeature(QtCore.QObject):
     # paramSmooth: iter = interations, offset = 0.0 - 1.0(100%)
     # paramsSieve: threshold = Size in Pixel, connectedness = 4 or 8(diagonal)
     tSieve = self.dockWidgetGui.sbSieveThreshold.value() + 1
+    tAzimuth = self.dockWidgetGui.sbAzimuthThreshold.value()
     offset = self.dockWidgetGui.spSmoothOffset.value() / 100.0
     vinter = self.dockWidgetGui.sbSmoothIteration.value()
 
@@ -663,11 +719,12 @@ class GimpSelectionFeature(QtCore.QObject):
       'socket': self.socket,
       'paramSmooth': { 'iter': vinter, 'offset': offset },
       'paramsSieve': { 'threshold': tSieve, 'connectedness': 4 },
+      'paramsAzimuth': { 'threshold': tAzimuth },
       'layerPolygon': self.layerPolygon
     }
     self.worker.setDataRun( params, 'addFeatures' )
-    #self.thread.start()
-    self.worker.run() # QtCore.qDebug("DEBUG 1")
+    self.thread.start()
+    #self.worker.run() # QtCore.qDebug("DEBUG 1")
 
   @QtCore.pyqtSlot()
   def removeLastFeatures(self):
@@ -736,6 +793,15 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
         sp.setValue(value)
         return sp
 
+      def getSpinBoxAzimuth(wgt, value):
+        sp = QtGui.QSpinBox( wgt)
+        sp.setRange(0, 45)
+        sp.setSingleStep(1)
+        sp.setSuffix(' degrees')
+        sp.setValue(value)
+        sp.setToolTip("Degrees of azimuth between vertexs")
+        return sp
+
       def getSpinBoxIteration(wgt, value):
         sp = QtGui.QSpinBox( wgt)
         sp.setRange(0, 3)
@@ -773,6 +839,7 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
       self.btnAddFeatures = QtGui.QPushButton("Add features", wgt )
       self.btnRemoveLastFeatures = QtGui.QPushButton("Remove last features", wgt )
       self.sbSieveThreshold = getSpinBoxSieve( wgt, 5 )
+      self.sbAzimuthThreshold = getSpinBoxAzimuth( wgt, 0 )
       self.spSmoothOffset = getSpinBoxOffset( wgt, 25 )
       self.sbSmoothIteration  = getSpinBoxIteration( wgt, 1)
       self.btnStopTransfer = QtGui.QPushButton("Stop transfer", wgt )
@@ -788,7 +855,9 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
       l_wts = [
         { 'widget': QtGui.QLabel("Remove Area:", wgt ), 'row': 0, 'col': 0 },
         { 'widget': self.sbSieveThreshold,              'row': 0, 'col': 1 },
-        { 'widget': gbxSmooth,                          'row': 1, 'col': 0, 'spam': spamSmooth }
+        { 'widget': QtGui.QLabel("Remove Vertex:", wgt ),     'row': 1, 'col': 0 },
+        { 'widget': self.sbAzimuthThreshold,            'row': 1, 'col': 1 },
+        { 'widget': gbxSmooth,                          'row': 2, 'col': 0, 'spam': spamSmooth }
       ]
       self.gbxSettingFeatures = getGroupBox( "Setting", wgt, l_wts)
       spamSetting = { 'row': 1, 'col': 2 }
