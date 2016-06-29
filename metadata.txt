@@ -6,7 +6,7 @@ about=This plugin create a memory layer, where, yours feature can come from sele
   This plugin is developed on the demand of IBAMA(Brazilian Institute of Environment and Renewable Natural Resources)
   http://www.ibama.gov.br
   Tested with GIMP 2.8
-version=0.2
+version=0.3
 qgisMinimumVersion=2.14
 category=Raster
 author=Luiz Motta
