@@ -117,8 +117,6 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
             dx = p2[0] - p1[0]
             dy = p2[1] - p1[1]
             az = math.atan2( dx, dy ) * 180.0 / math.pi
-            if az < 0.0:
-              az = 360.0 - abs( az )
             return az
           
           if ring.GetPointCount() < 4:
@@ -835,8 +833,8 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
       gbxImage = getGroupBox( "Image", wgt, l_wts)
       # Transfer
       self.chkIsView = QtGui.QCheckBox("Image view", wgt)
-      self.btnAddImage = QtGui.QPushButton("Add image", wgt )
-      self.btnAddFeatures = QtGui.QPushButton("Add features", wgt )
+      self.btnAddImage = QtGui.QPushButton("Send image", wgt )
+      self.btnAddFeatures = QtGui.QPushButton("Get features", wgt )
       self.btnRemoveLastFeatures = QtGui.QPushButton("Remove last features", wgt )
       self.sbSieveThreshold = getSpinBoxSieve( wgt, 5 )
       self.sbAzimuthThreshold = getSpinBoxAzimuth( wgt, 0 )

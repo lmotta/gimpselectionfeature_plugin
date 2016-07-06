@@ -12,6 +12,8 @@ Work with GIMP. Add image, (view of canvas) or source, from QGIS to GIMP. Add se
 Luiz Motta
 
 ## Changelog
+- 2016-07-06
+Change Azimuth (Not sum 360) and change labels Add(Send,Get)
 - 2016-06-29
 Added removed vertexs by Azimuth,
 Fixed when copy GIMP's plugin in Windows and not more need open a image to run Plugin in GIMP
