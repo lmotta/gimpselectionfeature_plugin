@@ -4,21 +4,20 @@
 ![][ibama_logo]  
 [Brazilian Institute of Environment and Renewable Natural Resources](http://www.ibama.gov.br)
 
-# Gimp Selection Feature Plugin QGIS
+# Gimp Selection Feature
 
-Work with GIMP. Add image, (view of canvas) or source, from QGIS to GIMP. Add selection area from GIMP to a polygon layer in QGIS.
+Plugin for adding selected area in GIMP how a feature in polygon layer.
 
 ## Author
 Luiz Motta
 
 ## Changelog
-- 2016-07-06
-Change Azimuth (Not sum 360) and change labels Add(Send,Get)
+- 2018-12-06
+Migrated to QGIS 3.2
 - 2016-06-29
-Added removed vertexs by Azimuth,
-Fixed when copy GIMP's plugin in Windows and not more need open a image to run Plugin in GIMP
+Added removed vertexs by Azimuth.
+Fixed when copy GIMP's plugin in Windows and not more need open a image to run Plugin.
 - 2016-06-19
 Change DBUS to Socket
 - 2016-06-16
-Started plugin
-
+Start of plugin

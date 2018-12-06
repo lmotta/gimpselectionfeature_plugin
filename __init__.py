@@ -20,26 +20,31 @@ email                : motta.luiz@gmail.com
 """
 import os, stat, sys, re, shutil, filecmp
 
-from PyQt4 import ( QtGui, QtCore )
-from qgis import gui as QgsGui
+from qgis.PyQt.QtCore import Qt, QObject, pyqtSlot, QCoreApplication
+from qgis.PyQt.QtGui import QIcon
+from qgis.PyQt.QtWidgets import QAction
 
-from gimpselectionfeature import ( DockWidgetGimpSelectionFeature, GimpSelectionFeature )
+from qgis.core import Qgis
+
+from .gimpselectionfeature import ( DockWidgetGimpSelectionFeature, GimpSelectionFeature )
+from .translate import Translate
 
 
 def classFactory(iface):
   return GimpSelectionFeaturePlugin( iface )
 
-class GimpSelectionFeaturePlugin:
+class GimpSelectionFeaturePlugin(QObject):
 
   def __init__(self, iface):
+    super().__init__()
     self.iface = iface
     self.name = u"&Gimp Selection Feature"
     self.dock = self.exitsPluginGimp = None
+    self.translate = Translate( 'gimpselectionfeature' )
 
   def initGui(self):
     def setExistsPluginGimp():
       def getDirPluginGimp():
-        # ~/.gimp-2.8/plug-ins/  ~/Library/GIMP/2.8/  ~/Library/Application Support/GIMP/2.8/
         dirPlugin = None
         mask = r".*gimp.[0-9]+.[0-9]+/%s" % nameDirPlugin # Linux Format
         for root, dirs, files in os.walk( dirHome ):
@@ -59,7 +64,7 @@ class GimpSelectionFeaturePlugin:
       nameDirPlugin = "plug-ins"
       dirPluginGimp = getDirPluginGimp()
       if dirPluginGimp is None:
-        msg = "Not found diretory 'GIMP' or 'GIMP %s' in '%s'" % ( nameDirPlugin, dirHome )
+        msg = "Not found diretory 'GIMP' or 'GIMP {}' in '{}'".format( nameDirPlugin, dirHome )
         self.exitsPluginGimp = { 'isOk': False, 'msg': msg }
         return
 
@@ -72,9 +77,9 @@ class GimpSelectionFeaturePlugin:
       self.exitsPluginGimp = { 'isOk': True }
 
     name = "Gimp Selection Feature"
-    about = "Adding selected area in GIMP how a feature in memory layer"
-    icon = QtGui.QIcon( os.path.join( os.path.dirname(__file__), 'gimpselectionfeature.svg' ) )
-    self.action = QtGui.QAction( icon, name, self.iface.mainWindow() )
+    about = QCoreApplication.translate('GimpSelectionFeature', 'Adding selected area in GIMP how a feature in memory layer')
+    icon = QIcon( os.path.join( os.path.dirname(__file__), 'gimpselectionfeature.svg' ) )
+    self.action = QAction( icon, name, self.iface.mainWindow() )
     self.action.setObjectName( name.replace(' ', '') )
     self.action.setWhatsThis( about )
     self.action.setStatusTip( about )
@@ -89,7 +94,7 @@ class GimpSelectionFeaturePlugin:
       return
 
     self.dock = DockWidgetGimpSelectionFeature( self.iface )
-    self.iface.addDockWidget( QtCore.Qt.RightDockWidgetArea , self.dock )
+    self.iface.addDockWidget( Qt.RightDockWidgetArea , self.dock )
     self.dock.visibilityChanged.connect( self.dockVisibilityChanged )
 
   def unload(self):
@@ -103,11 +108,11 @@ class GimpSelectionFeaturePlugin:
 
     del self.action
 
-  @QtCore.pyqtSlot()
+  @pyqtSlot()
   def run(self):
     if not self.exitsPluginGimp['isOk']:
       ( t, m ) = ( GimpSelectionFeature.nameModulus, self.exitsPluginGimp['msg'] )
-      self.iface.messageBar().pushMessage( t, m, QgsGui.QgsMessageBar.CRITICAL, 5 )
+      self.iface.messageBar().pushMessage( t, m, Qgis.Critical, 5 )
       self.action.setChecked( False )
       return
 
@@ -116,6 +121,6 @@ class GimpSelectionFeaturePlugin:
     else:
       self.dock.show()
 
-  @QtCore.pyqtSlot(bool)
+  @pyqtSlot(bool)
   def dockVisibilityChanged(self, visible):
     self.action.setChecked( visible )

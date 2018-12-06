@@ -26,31 +26,15 @@ from gimpshelf import shelf as gimp_shelf
 from os import path
 import socket, json
 
-# DEBUG
-def startPyDevClient():
-  import sys
-  eclipse_path = '/home/lmotta/.eclipse/org.eclipse.platform_4.6.0_1473617060_linux_gtk_x86_64'
-  pydev_path = "%s/%s" % ( eclipse_path, '/plugins/org.python.pydev_5.1.1.201606162013/pysrc' )
-  sys.path.append(pydev_path)
-  started = False
-  try:
-    import pydevd
-    pydevd.settrace(port=5678, suspend=False)
-    started = True
-  except:
-    pass
-  return started
-####
-
-
 class SocketService(object):
   titleServer = "Service for save the selected regions"
   def __init__(self):
     super( SocketService, self ).__init__()
     self.addedImages = {}
+    self.pathfileImage, self.pathfileImageSelect = None, None
+    self.paramImage = {}
     self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    self.port = 10000
-    self.conn = self.filename = None
+    self.conn, self.port = None, 10000
     
   def __del__(self):
     if not self.conn is None:
@@ -83,41 +67,46 @@ class SocketService(object):
       except ValueError, e:
         continue
 
-      if not data.has_key( 'function' ):
+      if not 'function' in data:
         continue
 
-      self.filename = data['filename']
+      if data['function'] == 'add_image':
+        self.pathfileImage = data['filename']
+        self.paramImage.clear() 
+        self.paramImage = data['paramImage']
+      else:
+        self.pathfileImageSelect = data['filename']
+
       functions = {
         'add_image':              self.add_image,
-        'add_image_overwrite':    self.add_image_overwrite,
         'create_selection_image': self.create_selection_image
       }
       functions[ data['function'] ]()
 
   def existImage(self):
-    if self.addedImages.has_key( self.filename ):
-      image = self.addedImages[ self.filename ]['image']
+    if self.pathfileImage in self.addedImages:
+      image = self.addedImages[ self.pathfileImage ]['image']
       if pdb.gimp_image_is_valid( image ):
         return { 'isOk': True, 'image': image }
 
     images = gimp.image_list()
     if len ( images ) == 0:
-      return { 'isOk': False, 'msg': "Not exist images"  }
-    images_by_filename = filter( lambda item: item.filename == self.filename, images )
+      return { 'isOk': False, 'message': "Not exist images"  }
+    images_by_filename = filter( lambda item: item.filename == self.pathfileImage, images )
     del images
     if len ( images_by_filename ) == 0:
-      return { 'isOk': False, 'msg': "Not exist image '%s'" % self.filename }
+      return { 'isOk': False, 'message': "Not exist image '%s'" % self.pathfileImage }
     image = images_by_filename[0]
     del images_by_filename
     if not pdb.gimp_image_is_valid( image ):
-      return { 'isOk': False, 'msg': "Image '%s' is not valid" % self.filename }
+      return { 'isOk': False, 'message': "Image '%s' is not valid" % self.pathfileImage }
 
     return { 'isOk': True, 'image': image }
 
   def isTifImage(self):
-    isTif = path.splitext( self.filename )[1].upper() == '.TIF'
+    isTif = path.splitext( self.pathfileImage )[1].upper() == '.TIF'
     if not isTif:
-      return { 'isOk': False, 'msg': "Image '%s' need be TIF" % self.filename }
+      return { 'isOk': False, 'message': "Image '%s' need be TIF" % self.pathfileImage }
     #
     return { 'isOk': True }
 
@@ -127,33 +116,19 @@ class SocketService(object):
       self.conn.send( json.dumps( vreturn ) )
       return
 
-    vreturn = self.existImage()
-    if vreturn['isOk']:
-      msg = "Image '%s' is already open"  % self.filename
-      self.conn.send( json.dumps( { 'isOk': False, 'msg': msg} ) )
-      return
-
-    image = pdb.file_tiff_load( self.filename, "" )
-    display = gimp.Display( image )
-    self.addedImages[ self.filename ] = { 'display': display, 'image': image }
-    msg = "Added image '%s'" % self.filename
-    
-    self.conn.send( json.dumps( { 'isOk': True, 'msg': msg } ) )
-
-  def add_image_overwrite(self):
-    if self.addedImages.has_key( self.filename ):
+    if self.pathfileImage in self.addedImages:
       # Check is valid Display (can remove by GIMP user)
-      display = self.addedImages[ self.filename ]['display']
+      display = self.addedImages[ self.pathfileImage ]['display']
       if pdb.gimp_display_is_valid( display ):
         pdb.gimp_display_delete( display )  
-      del self.addedImages[ self.filename ]
+      del self.addedImages[ self.pathfileImage ]
 
-    image = pdb.file_tiff_load( self.filename, "" )
+    image = pdb.file_tiff_load( self.pathfileImage, "" )
     display = gimp.Display( image )
-    self.addedImages[ self.filename ] = { 'display': display, 'image': image }
-    msg = "Added image '%s'" % self.filename
+    self.addedImages[ self.pathfileImage ] = { 'display': display, 'image': image }
+    msg = "Added image '%s'" % self.pathfileImage
     
-    self.conn.send( json.dumps( { 'isOk': True, 'msg': msg } ) )
+    self.conn.send( json.dumps( { 'isOk': True, 'message': msg } ) )
 
   def create_selection_image(self):
     vreturn = self.existImage()
@@ -167,7 +142,7 @@ class SocketService(object):
       return
     is_empty = pdb.gimp_selection_is_empty( image )
     if is_empty == 1:
-      self.conn.send( json.dumps( { 'isOk': False, 'msg': "No selection in '%s'" % self.filename } ) )
+      self.conn.send( json.dumps( { 'isOk': False, 'message': "No selection in '%s'" % self.pathfileImage } ) )
       return
 
     non_empty, x1, y1, x2, y2 = pdb.gimp_selection_bounds( image )
@@ -175,12 +150,15 @@ class SocketService(object):
     selimage.crop( x2 - x1, y2 - y1, x1, y1 )
     pdb.gimp_selection_sharpen( selimage )
     channel = pdb.gimp_selection_save( selimage )
-    filename = "%s_select.tif" % path.splitext( self.filename )[0]
-    pdb.file_tiff_save( selimage, channel, filename, "", 0)
+    pdb.file_tiff_save( selimage, channel, self.pathfileImageSelect, "", 0)
     pdb.gimp_image_delete( selimage )
     #
-    vreturn = { 'isOk': True, 'tiePoint': ( x1, y1 ), 'filename': filename }
-    self.conn.send( json.dumps( vreturn ) )
+    data = {
+      'isOk': True,
+      'ulPixelSelect': { 'X': x1, 'Y': y1 }
+    }
+    data.update( self.paramImage )
+    self.conn.send( json.dumps( data ) )
 
   def quit(self):
     gimp.message( "%s: Stopped!" % self.titleServer)
@@ -190,7 +168,6 @@ class SocketService(object):
 
 def run():
   
-  #startPyDevClient()
   if gimp_shelf.has_key('socket_server') and gimp_shelf['socket_server']:
     gimp.message( "WARNING: '%s' is already running!" % SocketService.titleServer)
     return

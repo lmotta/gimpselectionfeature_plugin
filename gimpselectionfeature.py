@@ -22,95 +22,115 @@ import os, sys, json, datetime, socket, math
 
 from os import path
 
-from PyQt4 import ( QtGui, QtCore )
-from qgis import ( core as QgsCore, gui as QgsGui )
+from qgis.PyQt.QtCore import (
+  Qt, QVariant, QObject, QCoreApplication, QTimer, 
+  pyqtSlot, pyqtSignal, QThread
+)
+from qgis.PyQt.QtGui import QImage, QColor, QIntValidator
+from qgis.PyQt.QtWidgets import (
+  QMessageBox, QDockWidget, QLayout, QGridLayout, QGroupBox, QDoubleSpinBox,
+  QSpinBox, QLineEdit, QWidget, QLabel, QPushButton, QLineEdit, QCheckBox
+)
+from qgis.core import (
+  Qgis, QgsWkbTypes, QgsProject, QgsMapSettings, QgsMapRendererParallelJob,
+  QgsMapLayer, QgsVectorLayer, QgsVectorFileWriter, QgsFeatureRequest,
+  QgsFeature, QgsField, QgsFields, QgsExpression, QgsGeometry, QgsRectangle, QgsWkbTypes,
+  QgsCoordinateTransform, QgsCoordinateReferenceSystem 
+)
+from qgis.gui import QgsRubberBand
+from qgis import utils as QgsUtils
 
-from osgeo import ( gdal, ogr, osr, gdalconst )
+from osgeo import gdal, ogr, osr, gdalconst
 
-class WorkerGimpSelectionFeature(QtCore.QObject):
-  finished = QtCore.pyqtSignal(dict)
-  messageStatus = QtCore.pyqtSignal(dict)
-  socketnone = QtCore.pyqtSignal()
+from .json2html import getHtmlTreeMetadata
+
+class WorkerGimpSelectionFeature(QObject):
+  finished = pyqtSignal(dict)
+  messageStatus = pyqtSignal(dict)
+  socketnone = pyqtSignal()
 
   def __init__(self):
-    super(WorkerGimpSelectionFeature, self).__init__()
+    super().__init__()
+    self.socket, self.paramProcess = None, None
     self.isKilled = None
-    self.runProcess = self.paramsImage =  None
-    self.paramSmooth = self.paramsSieve = self.paramsAzimuth = self.layerPolygon = None
-    self.socket = None
     self.idAdd = 0
 
-  def setDataRun(self, params, nameProcess):
-    self.paramsImage = params['paramsImage']
+  def setDataRun(self, params):
     self.socket = params['socket']
-    if 'addFeatures' == nameProcess:
-      self.runProcess = self.addFeatures
-      self.paramSmooth = params['paramSmooth']
-      self.paramsSieve = params['paramsSieve']
-      self.paramsAzimuth  = params['paramsAzimuth']
-      self.layerPolygon = params['layerPolygon']
-    elif 'addImageGimp' == nameProcess:
-      self.runProcess = self.addImageGimp
+    self.paramProcess = params['paramProcess']
+    if 'sendImageGimp' == params['process']:
+      self.runProcess = self.sendImageGimp
+    elif 'getFeatures' == params['process']:
+      self.runProcess = self.getFeatures
     else:
       self.runProcess = None
 
-  def getDataServer(self, nameFunction, filename):
-    data = { 'function': nameFunction, 'filename': filename  }
+  def getDataServer(self):
+    if self.runProcess == self.sendImageGimp:
+      data = {
+        'function': 'add_image',
+        'filename': self.paramProcess['pathfileImage'],
+        'paramImage': {
+          'extent_map': self.paramProcess['extent_map'],
+          'crs_map': self.paramProcess['crs_map'],
+          'res': { 'X': self.paramProcess['res']['X'], 'Y': self.paramProcess['res']['Y'] },
+          'json_images': self.paramProcess['json_images']
+        }
+      }
+    elif self.runProcess == self.getFeatures:
+      data = {
+        'function': 'create_selection_image',
+        'filename': self.paramProcess['pathfileImageSelect']
+      }
+    
     sdata = json.dumps( data )
     try:
-      self.socket.send( sdata )
+      self.socket.send( sdata.encode() )
       sdata = self.socket.recv(4096)
     except socket.error as msg_socket:
-      msg = "Error connection GIMP Server: %s. Run IBAMA plugin in GIMP"  % str( msg_socket )
+      msg = QCoreApplication.translate('GimpSelectionFeature', 'Error connection GIMP Server: {}. Run IBAMA plugin in GIMP')
+      msg = msg.format( str( msg_socket ) )
       self.socketnone.emit()
-      return { 'isOk': False, 'msg': msg }
+      return { 'isOk': False, 'message': msg }
     
     if len( sdata ) == 0:
-      msg = "Run IBAMA Plugin, 'Tools/IBAMA/Service for save the selected regions', in GIMP!"
+      msg = QCoreApplication.translate('GimpSelectionFeature', "Run IBAMA Plugin, 'IBAMA/Service for save the selected regions', in GIMP!")
       self.socketnone.emit()
-      return { 'isOk': False, 'msg': msg }
+      return { 'isOk': False, 'message': msg }
 
     return json.loads( sdata )
 
   def finishedWarning(self, msg):
-    typeMsg = QgsGui.QgsMessageBar.WARNING
+    typeMsg = Qgis.Warning
     if self.isKilled:
-      typeMsg = QgsGui.QgsMessageBar.CRITICAL
-    self.messageStatus.emit( { 'type': typeMsg, 'msg': msg } )
+      typeMsg = Qgis.Critical
+    self.messageStatus.emit( { 'type': typeMsg, 'message': msg } )
     self.finished.emit( { 'isOk': False } )
 
-  def addFeatures(self):
-    def setGeorefImage():
-      ds = gdal.Open( pImgSel['filename'], gdalconst.GA_Update )
+  def getFeatures(self):
+    def getGeorefImage():
+      ds = gdal.Open( self.paramProcess['pathfileImageSelect'], gdalconst.GA_Update )
       if gdal.GetLastErrorType() != 0:
-        return { 'isOk': False, 'msg': gdal.GetLastErrorMsg() }
+        return { 'isOk': False, 'message': gdal.GetLastErrorMsg() }
 
-      xOrigin = yOrigin = None
-      if isView:
-        xOrigin = self.paramsImage['view']['extent'].xMinimum()
-        yOrigin = self.paramsImage['view']['extent'].yMaximum()
-      else:
-        xOrigin = self.paramsImage['tiePoint'][0]
-        yOrigin = self.paramsImage['tiePoint'][1]
-      tiePointOrigin = ( xOrigin, yOrigin )
+      sizeX, sizeY = ds.RasterXSize, ds.RasterYSize
+      p = paramsImgSel
+      smin, smax = p['extent_map'].split(',')
+      ulX = float( smin.split(' ')[0])
+      ulY = float( smax.strip().split(' ')[1])
+      ulX_SelImage = ulX + p['ulPixelSelect']['X'] *  p['res']['X']
+      ulY_SelImage = ulY - p['ulPixelSelect']['Y'] *  p['res']['Y']
 
-      i = 0
-      xIni = tiePointOrigin[i] + pImgSel['tiePoint'][i] * self.paramsImage['res'][i]
-      i = 1
-      yIni = tiePointOrigin[i] - pImgSel['tiePoint'][i] * self.paramsImage['res'][i]
-
-      transform = ( xIni, self.paramsImage['res'][0], 0.0, yIni, 0.0, -1*self.paramsImage['res'][1] )
+      transform = ( ulX_SelImage,  p['res']['X'], 0.0, ulY_SelImage, 0.0, -1 *  p['res']['Y'] )
       ds.SetGeoTransform( transform )
-      ds.SetProjection( self.paramsImage['wktProj'] )
+      ds.SetProjection( wktProj )
 
       band = ds.GetRasterBand( 1 )
       band.SetNoDataValue( 0.0 )
 
-      ds = None
+      return { 'isOk': True, 'dataset': ds }
 
-      return { 'isOk': True }
-
-    def polygonizeSelectionImage():
+    def polygonizeSelectionImage(ds_img):
       def setGeomAzimuthTolerance(geom, threshold):
         def changeRing(ring):
           def azimuth(p1, p2):
@@ -125,7 +145,7 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
           points = ring.GetPoints()
           ids_new = [ 0 ]
           upperIdPoints = len( points ) -1
-          for i in xrange( 1, upperIdPoints ):
+          for i in range( 1, upperIdPoints ):
             aznew = azimuth( points[ ids_new[-1] ], points[ i ] )
             az = azimuth( points[ i ], points[ i+1 ] )
             if abs( az - aznew ) > threshold:
@@ -135,46 +155,41 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
             ids_remove = list( set( range( len( points ) ) ) - set( ids_new ) )
             ids_remove.sort()
             ids_remove.reverse()
-            for i in xrange( len( ids_remove ) ):
+            for i in range( len( ids_remove ) ):
               del points[ ids_remove[ i ] ]
             
             ring.Empty()
-            for i in xrange( len( points ) ):
+            for i in range( len( points ) ):
               ring.SetPoint_2D( i, points[i][0], points[i][1])
 
         numPolygons = geom.GetGeometryCount()
-        for id1 in xrange(  numPolygons ):
+        for id1 in range(  numPolygons ):
           polygon = geom.GetGeometryRef( id1 )
           numRings = polygon.GetGeometryCount()
           if numRings == 0:
             changeRing( polygon ) # Only Out ring! 
           else:
-            for id2 in xrange(  numRings ):
+            for id2 in range(  numRings ):
               ring = polygon.GetGeometryRef( id2)
               changeRing( ring )
 
-      ds_img = gdal.Open( pImgSel['filename'], gdalconst.GA_ReadOnly )
-      if gdal.GetLastErrorType() != 0:
-        return { 'isOk': False, 'msg': gdal.GetLastErrorMsg() }
       band = ds_img.GetRasterBand( 1 )
-
       # Sieve Band
       drv = gdal.GetDriverByName('MEM')
       ds_sieve = drv.Create( '', ds_img.RasterXSize, ds_img.RasterYSize,1, band.DataType )
       ds_sieve.SetGeoTransform( ds_img.GetGeoTransform() )
-      ds_sieve.SetProjection( self.paramsImage['wktProj'] )
       band_sieve = ds_sieve.GetRasterBand(1)
 
-      p_threshold = self.paramsSieve['threshold']
-      p_connectedness = self.paramsSieve['connectedness']
+      p_threshold = self.paramProcess['sieve']['threshold']
+      p_connectedness = self.paramProcess['sieve']['connectedness']
       gdal.SieveFilter( band, None, band_sieve, p_threshold, p_connectedness, [], callback=None )
-      ds_img = band = None
+      ds_img, band = None, None
       if gdal.GetLastErrorType() != 0:
-        return { 'isOk': False, 'msg': gdal.GetLastErrorMsg() }
+        return { 'isOk': False, 'message': gdal.GetLastErrorMsg() }
 
       # Memory layer - Polygonize
       srs = osr.SpatialReference()
-      srs.ImportFromWkt( self.paramsImage['wktProj'] )
+      srs.ImportFromWkt( wktProj )
       drv_poly = ogr.GetDriverByName('MEMORY')
       ds_poly = drv_poly.CreateDataSource('memData')
       layer_poly = ds_poly.CreateLayer( 'memLayer', srs, ogr.wkbPolygon )
@@ -185,12 +200,12 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
       gdal.Polygonize( band_sieve, None, layer_poly, idField, [], callback=None )
       ds_sieve = band_sieve = None
       if gdal.GetLastErrorType() != 0:
-        return { 'isOk': False, 'msg': gdal.GetLastErrorMsg() }
+        return { 'isOk': False, 'message': gdal.GetLastErrorMsg() }
 
       # Get Geoms - Apply Azimuth tolerance
       geoms = []
       layer_poly.SetAttributeFilter("dn = 255")
-      p_threshold = self.paramsAzimuth['threshold']
+      p_threshold = self.paramProcess['azimuth']['threshold']
       if p_threshold > 0:
         p_threshold = float( p_threshold )
         for feat in layer_poly:
@@ -207,11 +222,16 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
 
     def addAttribute(feat):
       self.idAdd += 1
-      sdatetime = str( datetime.datetime.now() )
-      feat.setAttribute('image', self.paramsImage['filename'] )
-      feat.setAttribute('datetime', sdatetime )
-      feat.setAttribute('crs', self.paramsImage['desc_crs'] )
       feat.setAttribute('id_add', self.idAdd )
+      sdatetime = str( datetime.datetime.today().replace(microsecond=0) )
+      feat.setAttribute('date_add', sdatetime )
+      v_json = json.loads( paramsImgSel['json_images'] )
+      html  = getHtmlTreeMetadata( v_json, '')
+      feat.setAttribute('images', html )
+      feat.setAttribute('total_imgs', len( v_json ) )
+      feat.setAttribute('crs_map', paramsImgSel['crs_map'] )
+      feat.setAttribute('extent_map', paramsImgSel['extent_map'] )
+      feat.setAttribute('annotation', self.paramProcess['annotation'] )
 
     def envelopGeoms(envFeats, geom):
       env = list( geom.GetEnvelope() ) #  [ xmin, xmax, ymin, ymax ]
@@ -227,158 +247,198 @@ class WorkerGimpSelectionFeature(QtCore.QObject):
 
       return envFeats
 
+    # Show error _TIFFVSetField: when read Selected Image
+    # Try use 'gdal.UseExceptions()' and try / except RuntimeError: but not work..
     self.isKilled = False
-    filename = self.paramsImage['filename']
-    isView = QtCore.Qt.Checked == self.paramsImage['view']['checkState']
-    if isView:
-      filename = self.paramsImage['view']['filename']
+    msgKilled = QCoreApplication.translate('GimpSelectionFeature', 'Processing is stopped by user')
+    msg = QCoreApplication.translate('GimpSelectionFeature', 'Creating features in QGIS...')
+    self.messageStatus.emit( { 'type': Qgis.Info, 'message': msg } )
 
-    msg = "Creating features in QGIS..."
-    self.messageStatus.emit( { 'type': QgsGui.QgsMessageBar.INFO, 'msg': msg } )
-
-    pImgSel = self.getDataServer( 'create_selection_image', filename )
-    if not pImgSel['isOk']:
-      self.finishedWarning( pImgSel['msg'] )
+    paramsImgSel = self.getDataServer()
+    if not paramsImgSel['isOk']:
+      self.finishedWarning( paramsImgSel['message'] )
       return
     if self.isKilled:
-      self.finishedWarning( "Processing is stopped by user" )
-      os.remove( pImgSel['filename'] )
+      self.finishedWarning( msgKilled )
       return
-    vreturn = setGeorefImage()
+    wktProj = QgsCoordinateReferenceSystem( paramsImgSel['crs_map'] ).toWkt()
+    vreturn = getGeorefImage()
     if not vreturn['isOk']:
-      self.finishedWarning( vreturn['msg'] )
-      os.remove( pImgSel['filename'] )
+      self.finishedWarning( vreturn['message'] )
       return
+    ds_img = vreturn['dataset']
     if self.isKilled:
-      self.finishedWarning( "Processing is stopped by user" )
-      os.remove( pImgSel['filename'] )
+      self.finishedWarning( msgKilled )
       return
-    vreturn = polygonizeSelectionImage()
-    os.remove( pImgSel['filename'] )
+    vreturn = polygonizeSelectionImage( ds_img )
     if not vreturn['isOk']:
-      self.finishedWarning( vreturn['msg'] )
+      self.finishedWarning( vreturn['message'] )
       return
     if self.isKilled:
-      self.finishedWarning( "Processing is stopped by user" )
+      self.finishedWarning( msgKilled )
       return
 
     totalFeats = len( vreturn['geoms'] ) 
     if totalFeats  == 0:
-      msg = "Not found features in selections ('%s')" % self.paramsImage['filename']
+      msg = "Not found features in selections ('{}')".format( self.paramProcess['pathfileImageSelect'] )
       self.finishedWarning( msg )
       return
 
+    layerPolygon = self.paramProcess['layerPolygon']
     srsLayerPolygon = osr.SpatialReference()
-    srsLayerPolygon.ImportFromWkt( self.layerPolygon.crs().toWkt() )
+    srsLayerPolygon.ImportFromWkt( layerPolygon.crs().toWkt() )
 
-    feat = QgsCore.QgsFeature( self.layerPolygon.dataProvider().fields() )
+    feat = QgsFeature( layerPolygon.dataProvider().fields() )
     addAttribute( feat )
 
-    isIniEditable = self.layerPolygon.isEditable()
+    isIniEditable = layerPolygon.isEditable()
     if not isIniEditable:
-      self.layerPolygon.startEditing()
+      layerPolygon.startEditing()
 
-    p_iter = self.paramSmooth['iter']
-    p_offset = self.paramSmooth['offset']
+    p_iter = self.paramProcess['smooth']['iter']
+    p_offset = self.paramProcess['smooth']['offset']
     envFeats = None # [ xmin, xmax, ymin, ymax ]
     for geom in vreturn['geoms']:
       geom.TransformTo( srsLayerPolygon )
       envFeats = envelopGeoms( envFeats, geom )
-      geomLayer = QgsCore.QgsGeometry.fromWkt( geom.ExportToWkt() ).smooth( p_iter, p_offset )
+      geomLayer = QgsGeometry.fromWkt( geom.ExportToWkt() ).smooth( p_iter, p_offset )
       geom.Destroy()
       feat.setGeometry( geomLayer )
-      self.layerPolygon.addFeature( feat )
+      layerPolygon.addFeature( feat )
       del geomLayer
 
     feat = None
-    self.layerPolygon.commitChanges()
+    layerPolygon.commitChanges()
     if isIniEditable:
-      self.layerPolygon.startEditing()
-    self.layerPolygon.updateExtents()
+      layerPolygon.startEditing()
+    layerPolygon.updateExtents()
+    msg = QCoreApplication.translate('GimpSelectionFeature', "Added {} features in '{}'")
+    msg = msg.format( totalFeats, layerPolygon.name() )
+    self.messageStatus.emit( { 'type': Qgis.Info, 'message': msg  } )
+    bboxFeats = QgsRectangle( envFeats[0], envFeats[2], envFeats[1], envFeats[3] )
+    self.finished.emit( { 'isOk': True, 'process': 'getFeatures', 'bboxFeats': bboxFeats, 'lastAdd': self.idAdd } )
 
-    msg = "Added %d features in '%s'" % ( totalFeats, self.layerPolygon.name() )
-    self.messageStatus.emit( { 'type': QgsGui.QgsMessageBar.INFO, 'msg': msg  } )
-    bboxFeats = QgsCore.QgsRectangle( envFeats[0], envFeats[2], envFeats[1], envFeats[3] )
-    self.finished.emit( { 'isOk': True, 'bboxFeats': bboxFeats, 'lastAdd': self.idAdd } )
+  def sendImageGimp(self):
+    def createImageParams():
+      def finished():
+        def addParams():
+          def getJsonImages():
+            vmap = {}
+            for l in self.paramProcess['layerImages']:
+              vmap[ l.name() ] = l.source()
+            return json.dumps( vmap )
 
-  def addImageGimp(self):
-    def createViewImage():
-      def addGeoInfo():
-        ds = gdal.Open( filename, gdalconst.GA_Update )
-        ds.SetProjection( self.paramsImage['wktProj'] )
-        res = self.paramsImage['res']
-        ds.SetGeoTransform( [ p_e.xMinimum(), res[0], 0, p_e.yMaximum(), 0, -1*res[1] ] )
-        del ds
-        ds = None
+          e =  self.paramProcess['canvas'].extent()
+          imgWidth, imgHeight = image.width(), image.height()
+          resX, resY = e.width() / imgWidth, e.height() / imgHeight
+          self.paramProcess['json_images'] = getJsonImages()
+          self.paramProcess['crs_map'] = self.paramProcess['canvas'].mapSettings().destinationCrs().authid()
+          self.paramProcess['extent_map'] = e.asWktCoordinates() # xMin, yMin, xMax, yMax
+          self.paramProcess['res'] = { 'X': resX, 'Y': resY } 
 
-      p_e  = self.paramsImage['view']['extent']
-      p_w  = self.paramsImage['view']['widthRead']
-      p_h  = self.paramsImage['view']['heightRead']
+        image = job.renderedImage()
+        if bool( self.paramProcess['canvas'].property('retro') ):
+          image = image.scaled( image.width() / 3, image.height() / 3 )
+          image = image.convertToFormat( QImage.Format_Indexed8, Qt.OrderedDither | Qt.OrderedAlphaDither )
+        image.save( self.paramProcess['pathfileImage'], "TIFF", 100 ) # 100: Uncompressed
+        addParams()
+
+      settings = QgsMapSettings( self.paramProcess['canvas'].mapSettings() )
+      settings.setBackgroundColor( QColor( Qt.transparent ) )
       
-      blockImage = self.paramsImage['renderer'].block( 1, p_e, p_w, p_h )
-      blockImage.image().save( self.paramsImage['view']['filename'] )
-      addGeoInfo()
+      layers = self.paramProcess['layerImages']
+      if 'layerPolygon' in self.paramProcess:
+        layers = [ self.paramProcess['layerPolygon'] ] + layers
+      settings.setLayers( layers )
+      job = QgsMapRendererParallelJob( settings ) 
+      job.start()
+      job.finished.connect( finished) 
+      job.waitForFinished()
 
-    def endWarning(msg):
-      if isView:
-        if path.exists( filename ):
-          os.remove( filename )
-      self.finishedWarning( msg )
-     
     self.isKilled = False
-    msg = None
-    filename = ""
-    isView = QtCore.Qt.Checked == self.paramsImage['view']['checkState']
-    if isView:
-      filename = self.paramsImage['view']['filename']
-      createViewImage()
-      msg = "Adding image view'%s' in GIMP..." % filename
-    else:
-      filename = self.paramsImage['filename']
-      msg = "Adding image '%s' in GIMP..." % filename
-    self.messageStatus.emit( { 'type': QgsGui.QgsMessageBar.INFO, 'msg': msg } )
-
-    if isView:
-      vreturn = self.getDataServer( 'add_image_overwrite', filename )
-    else:
-      vreturn = self.getDataServer( 'add_image', filename )
+    msg = QCoreApplication.translate('GimpSelectionFeature', 'Sending image to GIMP')
+    self.messageStatus.emit( { 'type': Qgis.Info, 'message': msg } )
+    createImageParams()
+    vreturn = self.getDataServer()
     if not vreturn['isOk']:
-      endWarning( vreturn['msg'] )
-      self.finished.emit( { 'isOk': False } )
+      self.finishedWarning( msg )
       return
 
-    msg = "GIMP: %s" % vreturn['msg']
-    self.messageStatus.emit( { 'type': QgsGui.QgsMessageBar.INFO, 'msg': msg } )
-    self.finished.emit( { 'isOk': True } )
+    msg = "GIMP: {}".format( vreturn['message'] )
+    self.messageStatus.emit( { 'type': Qgis.Info, 'message': msg } )
+    self.finished.emit( { 'isOk': True, 'process': 'sendImageGimp' } )
 
-  @QtCore.pyqtSlot()
+  @pyqtSlot()
   def run(self):
     if self.runProcess is None:
-      msg = "ERROR in Script"
-      self.messageStatus.emit( { 'type': QgsGui.QgsMessageBar.CRITICAL, 'msg': msg } )
+      msg = QCoreApplication.translate('GimpSelectionFeature', 'ERROR in Script')
+      self.messageStatus.emit( { 'type': Qgis.Critical, 'message': msg } )
       self.finished.emit( { 'isOk': False } )
       return
 
     self.runProcess()
 
-class GimpSelectionFeature(QtCore.QObject):
+class GimpSelectionFeature(QObject):
   nameModulus = "GimpSelectionFeature"
   def __init__(self, iface, dockWidgetGui):
-    super(GimpSelectionFeature, self).__init__()
-    self.dockWidgetGui = dockWidgetGui
-    self.paramsImage =  self.last_filename = self.layerPolygon = self.lastAdd = None
-    self.layerImage = self.layerChange = None
-    self.thread = self.socket = self.forceStopThread = self.hasConnect = None
-    ( self.iface, self.canvas,  self.msgBar ) = ( iface, iface.mapCanvas(), iface.messageBar() )
-    self.worker = WorkerGimpSelectionFeature()
+    def getDefinitionLayerPolygon(dirShape):
+      def getFields():
+        atts = [
+          { 'name': 'id_add', 'type': QVariant.Int },
+          { 'name': 'total_imgs', 'type':QVariant.Int },
+          { 'name': 'images', 'type': QVariant.String, 'len': 1000 },
+          { 'name': 'date_add', 'type': QVariant.String, 'len': 20 },
+          { 'name': 'crs_map', 'type': QVariant.String, 'len': 50 },
+          { 'name': 'extent_map', 'type': QVariant.String, 'len': 200 },
+          { 'name': 'annotation', 'type': QVariant.String, 'len': 100 }
+        ]
+        fields = QgsFields()
+        for att in atts:
+          f = QgsField( att['name'], att['type'] )
+          if 'len' in att:
+            f.setLength( att['len'])
+          fields.append( f )
+        return fields
 
+      return {
+        'fileName': os.path.join( dirShape, 'gimp_selection' ),
+        'enconding': 'CP1250',
+        'fields': getFields(),
+        'type': QgsWkbTypes.Polygon, # QgsVectorFileWriter
+        'geometryType': QgsWkbTypes.PolygonGeometry, # layer.geometryType()
+        'crs': QgsCoordinateReferenceSystem('EPSG:4326'),
+        'drive': 'ESRI Shapefile'
+      }
+
+    def createDirectories():
+      dirPlugin = os.path.dirname(__file__)
+      dirImage = os.path.join( dirPlugin, 'img' )
+      if not os.path.isdir( dirImage ):
+        os.mkdir( dirImage )
+      dirShape = os.path.join( dirPlugin, 'shp' )
+      if not os.path.isdir( dirShape ):
+        os.mkdir( dirShape )
+      return { 'image': dirImage, 'shape': dirShape }
+
+    super().__init__()
+    self.dockWidgetGui = dockWidgetGui
+    self.layerPolygon, self.lastAdd = None, None
+    self.layerImages = []
+    self.thread, self.socket, self.forceStopThread, self.hasConnect = None, None, None, None
+    self.canvas, self.msgBar = iface.mapCanvas(), iface.messageBar()
+    self.project = QgsProject.instance()
+    self.root = self.project.layerTreeRoot()
+    dirs = createDirectories()
+    self.pathfileImage = os.path.join( dirs['image'], 'tmp_gimp-plugin.tif' )
+    self.pathfileImageSelect = os.path.join( dirs['image'], 'tmp_gimp-plugin_sel.tif' )
+    self.defLayerPolygon = getDefinitionLayerPolygon( dirs['shape'] )
+    
+    self.worker = WorkerGimpSelectionFeature()
     self.initThread()
     self._connect()
 
-    self.setEnabledWidgetAdd( False )
+    self.setEnabledWidgetTransfer( False )
     self.dockWidgetGui.btnStopTransfer.setEnabled( False )
-    self.dockWidgetGui.btnSelectImage.setEnabled( False )
-    self.dockWidgetGui.chkIsView.setCheckState( QtCore.Qt.Checked )
 
   def __del__(self):
     if not self.socket is None:
@@ -388,7 +448,7 @@ class GimpSelectionFeature(QtCore.QObject):
       self._connect( False )
 
   def initThread(self):
-    self.thread = QtCore.QThread( self )
+    self.thread = QThread( self )
     self.thread.setObjectName( self.nameModulus )
     self.worker.moveToThread( self.thread )
     self._connectWorker()
@@ -416,11 +476,11 @@ class GimpSelectionFeature(QtCore.QObject):
 
   def _connect(self, isConnect = True):
     ss = [
-      { 'signal': QgsCore.QgsMapLayerRegistry.instance().layerWillBeRemoved, 'slot': self.removeLayer },
-      { 'signal': self.canvas.currentLayerChanged, 'slot': self.setSelectImage },
-      { 'signal': self.dockWidgetGui.btnSelectImage.clicked, 'slot': self.setParamsImage },
-      { 'signal': self.dockWidgetGui.btnAddImage.clicked, 'slot': self.addImageGimp },
-      { 'signal': self.dockWidgetGui.btnAddFeatures.clicked, 'slot': self.addFeatures },
+      { 'signal': self.project.layerWillBeRemoved, 'slot': self.removeLayer },
+      { 'signal': self.project.readProject, 'slot': self.readProject },
+      { 'signal': self.root.visibilityChanged, 'slot': self.visibilityChanged },
+      { 'signal': self.dockWidgetGui.btnSendImage.clicked, 'slot': self.sendImageGimp },
+      { 'signal': self.dockWidgetGui.btnGetFeatures.clicked, 'slot': self.getFeatures },
       { 'signal': self.dockWidgetGui.btnRemoveLastFeatures.clicked, 'slot': self.removeLastFeatures },
       { 'signal': self.dockWidgetGui.btnStopTransfer.clicked, 'slot': self.stopTransfer },
     ]
@@ -433,39 +493,97 @@ class GimpSelectionFeature(QtCore.QObject):
       for item in ss:
         item['signal'].disconnect( item['slot'] )
 
-  def setEnabledWidgetAdd( self, isEnabled ):
-    wgts = [ self.dockWidgetGui.chkIsView,
-             self.dockWidgetGui.btnAddImage,
-             self.dockWidgetGui.btnAddFeatures,
+  def setEnabledWidgetTransfer( self, isEnabled ):
+    wgts = [
+             self.dockWidgetGui.btnSendImage,
+             self.dockWidgetGui.btnGetFeatures,
              self.dockWidgetGui.btnRemoveLastFeatures,
              self.dockWidgetGui.gbxSettingFeatures
            ]
-    map( lambda item: item.setEnabled( isEnabled ), wgts )
+    [ item.setEnabled( isEnabled ) for item in wgts ]
     self.dockWidgetGui.btnStopTransfer.setEnabled( not isEnabled )
     if self.lastAdd is None:
       self.dockWidgetGui.btnRemoveLastFeatures.setEnabled( False )
-
-  def setLabelLayer(self, lblLayer, layer=None):
-    text = ""
-    tip = ""
-    if not layer is None:
-      text = layer.name()
-      tip = layer.source()
-    lblLayer.setText( text )
-    lblLayer.setToolTip( tip )
 
   def setSocket(self):
     if self.socket is None:
       self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
       try:
         self.socket.connect( ( '127.0.0.1', 10000) ) # ( IP, port)
-      except socket.error, e:
-        msg = "Run IBAMA Plugin, 'IBAMA/Service for save the selected regions', in GIMP!"
+      except socket.error:
+        msg = QCoreApplication.translate('GimpSelectionFeature', "Run IBAMA Plugin, 'IBAMA/Service for save the selected regions', in GIMP!")
         self.socket = None
-        return { 'isOk': False, 'msg': msg}
+        return { 'isOk': False, 'message': msg}
       return { 'isOk': True }
 
-  @QtCore.pyqtSlot(dict)
+  def setLegendImages(self):
+    def layerIntersectsCanvas(layer):
+      mapSettings = self.canvas.mapSettings()
+      crsCanvas = mapSettings.destinationCrs()
+      extentCanvas = self.canvas.extent()
+      if layer.crs() != crsCanvas:
+        extentCanvas = mapSettings.mapToLayerCoordinates( layer, extentCanvas )
+      extentLayer = layer.extent()
+      return extentLayer.intersects( extentCanvas )
+     
+    del self.layerImages[:]
+    txtLegend = ''
+    hasImages = False
+    totalImages = 0
+    rasters = list( filter( lambda l: not l is None and l.type() == QgsMapLayer.RasterLayer, self.root.checkedLayers() ) )
+    if len( rasters ) > 0:
+      for r in rasters:
+        if layerIntersectsCanvas( r ):
+          self.layerImages.append( r )
+      totalImages = len( self.layerImages )
+      if totalImages > 0:
+        names = list( map( lambda l: l.name(), self.layerImages ) )
+        txtLegend = "{}\n".format( names[0] ) if len( names ) == 1 else '\n'.join( names )
+        hasImages = True
+    
+    title = self.dockWidgetGui.formatTitleImages.format( totalImages )
+    if not self.layerPolygon is None and totalImages > 0 and self.project.layerTreeRoot().findLayer( self.layerPolygon.id() ).isVisible():
+      title = "{} and {}".format( title, self.layerPolygon.name() )
+    self.dockWidgetGui.gbxImage.setTitle( title )
+    self.dockWidgetGui.lblLegendImages.setText( txtLegend )
+    self.dockWidgetGui.btnSendImage.setEnabled( hasImages )
+
+  def setMaximumValueAdd(self):
+    idx = self.layerPolygon.fields().indexFromName('id_add')
+    self.worker.idAdd = self.layerPolygon.maximumValue( idx )
+
+  def GetFirstLayerPolygon(self):
+      def existsFields(names):
+        totalExists = 0
+        for name in names:
+          if name in defNames:
+            totalExists += 1
+        return totalExists == totalNames
+
+      layers = map( lambda ltl: ltl.layer(), self.root.findLayers() )
+      f = lambda l: l.type() == QgsMapLayer.VectorLayer and \
+                  l.geometryType() == self.defLayerPolygon['geometryType'] and \
+                  l.crs() == self.defLayerPolygon['crs']
+      defNames = self.defLayerPolygon['fields'].names()
+      totalNames = len( defNames )
+      for layer in filter( f, layers ):
+        if existsFields( layer.fields().names() ):
+          return { 'isOk': True, 'layer': layer }
+      return { 'isOk': False }
+
+  @pyqtSlot('QDomDocument')
+  def readProject(self, dom=None):
+    r = self.GetFirstLayerPolygon()
+    if r['isOk']:
+      self.layerPolygon = r['layer']
+      self.setMaximumValueAdd()
+    self.setLegendImages()
+
+  @pyqtSlot('QgsLayerTreeNode*')
+  def visibilityChanged(self, node):
+    self.setLegendImages()
+
+  @pyqtSlot(dict)
   def finishedWorker(self, data):
     def zoomToBBox(bboxFeats):
       def highlight():
@@ -473,14 +591,14 @@ class GimpSelectionFeature(QtCore.QObject):
           rb.reset( True )
           self.canvas.scene().removeItem( rb )
 
-        rb = QgsGui.QgsRubberBand( self.canvas, QgsCore.QGis.Polygon)
-        rb.setBorderColor( QtGui.QColor( 255,  0, 0 ) )
+        rb = QgsRubberBand( self.canvas, QgsWkbTypes.PolygonGeometry)
+        rb.setStrokeColor( QColor( 255,  0, 0 ) )
         rb.setWidth( 2 )
-        rb.setToGeometry( QgsCore.QgsGeometry.fromRect( extent ), None )
-        QtCore.QTimer.singleShot( 2000, removeRB )
+        rb.setToGeometry( QgsGeometry.fromRect( extent ), None )
+        QTimer.singleShot( 2000, removeRB )
 
       crsCanvas = self.canvas.mapSettings().destinationCrs()
-      ct = QgsCore.QgsCoordinateTransform( self.layerPolygon.crs(), crsCanvas )
+      ct = QgsCoordinateTransform( self.layerPolygon.crs(), crsCanvas, self.project )
       extent = ct.transform( bboxFeats )
       self.canvas.setExtent( extent )
       self.canvas.zoomByFactor( 1.05 )
@@ -493,245 +611,141 @@ class GimpSelectionFeature(QtCore.QObject):
     if self.worker.isKilled: 
       self.thread.wait()
 
-    if data.has_key('lastAdd'):
-      self.lastAdd = data['lastAdd']
-
-    self.setEnabledWidgetAdd( True )
-    if not data['isOk']:
+    if data['isOk']:
+      if data['process'] == 'getFeatures':
+        self.layerPolygon.loadNamedStyle( os.path.join( os.path.dirname( __file__ ), "gimpselectionfeature_with_expression.qml" ) )
+        self.lastAdd = data['lastAdd']
+        zoomToBBox( data['bboxFeats'] )
+        [ os.remove( item ) for item in filter( lambda f: path.exists( f ), ( self.pathfileImage, self.pathfileImageSelect ) ) ]
+    else:
       self.forceStopThread = False
-      return
 
-    if data.has_key('bboxFeats'):
-      zoomToBBox( data['bboxFeats'] )
-      return
-    
-  @QtCore.pyqtSlot( dict )
+    self.setEnabledWidgetTransfer( True )
+
+  @pyqtSlot( dict )
   def messageStatusWorker(self, msgStatus):
     self.msgBar.popWidget()
-    self.msgBar.pushMessage( self.nameModulus, msgStatus['msg'], msgStatus['type'], 5 )
+    self.msgBar.pushMessage( self.nameModulus, msgStatus['message'], msgStatus['type'], 5 )
 
-  @QtCore.pyqtSlot()
+  @pyqtSlot()
   def setSocketNone(self):
     self.socket = None
 
-  @QtCore.pyqtSlot(str)
+  @pyqtSlot(str)
   def removeLayer(self, sIdLayer):
-    if not self.layerImage is None and self.layerImage.id() == sIdLayer:
-      if self.thread.isRunning():
-        self.worker.isKilled = True
-      if self.paramsImage['view'].has_key('filename'):
-        if path.exists( self.paramsImage['view']['filename'] ):
-          os.remove( self.paramsImage['view']['filename'] )
-      del self.paramsImage
-      self.paramsImage = self.layerImage = None
-      self.setLabelLayer( self.dockWidgetGui.lblCurImage )
-      self.setEnabledWidgetAdd( False )
-      self.dockWidgetGui.btnStopTransfer.setEnabled( False )
-      return
-    if not self.layerChange is None and self.layerChange.id() == sIdLayer:
-      self.setSelectImage( None )
-      return
     if not self.layerPolygon is None and self.layerPolygon.id() == sIdLayer:
       if self.thread.isRunning():
         self.worker.isKilled = True
       self.layerPolygon = None
+    
+    if self.layerPolygon is None or sIdLayer in map( lambda lyr: lyr.id(), self.layerImages ):
+      self.setLegendImages()
 
-  @QtCore.pyqtSlot(QgsCore.QgsMapLayer)
-  def setSelectImage(self, layer):
-    enabled = False
-    if not layer is None and layer.type() == QgsCore.QgsMapLayer.RasterLayer:
-      self.setLabelLayer( self.dockWidgetGui.lblSelectImage, layer )
-      enabled = True
-      self.layerChange = layer
-    else:
-      self.setLabelLayer( self.dockWidgetGui.lblSelectImage )
-
-    self.dockWidgetGui.btnSelectImage.setEnabled( enabled )
-
-  @QtCore.pyqtSlot()
-  def setParamsImage(self):
-    if self.layerChange is None:
+  @pyqtSlot()
+  def sendImageGimp(self):
+    if len( self.layerImages ) == 0:
       return
-    if not self.layerChange.dataProvider().crs().isValid():
-      self.setLabelLayer( self.dockWidgetGui.lblSelectImage )
-      msg = "Invalid CRS of Raster layer '%s'" % self.layerChange.name()
-      msgStatus = { 'msg': msg, 'type': QgsGui.QgsMessageBar.WARNING } 
-      self.messageStatusWorker( msgStatus )
-      self.setLabelLayer( self.dockWidgetGui.lblSelectImage )
-      self.layerChange = None
-      return
+    self.setLegendImages() # Update the order of images
 
-    self.layerImage = self.layerChange
-    res = ( self.layerImage.rasterUnitsPerPixelX(), self.layerImage.rasterUnitsPerPixelY() )
-    tiePoint = ( self.layerImage.extent().xMinimum(), self.layerImage.extent().yMaximum() )
-    crs = self.layerImage.crs()
-    if not self.paramsImage is None:
-      del self.paramsImage
-    self.paramsImage = { 
-      'filename': self.layerImage.source(),
-      'res': res, 'tiePoint': tiePoint,
-      'wktProj': str( crs.toWkt() ),
-      'desc_crs': crs.description(),
-      'view': { 'checkState': QtCore.Qt.Unchecked },
-      'renderer': self.layerImage.renderer()
+    if self.socket is None:
+      vreturn = self.setSocket()
+      if not vreturn['isOk']:
+        msgStatus = { 'message': vreturn['message'], 'type': Qgis.Warning } 
+        self.messageStatusWorker( msgStatus )
+        return
+
+    self.setEnabledWidgetTransfer( False )
+    p = {
+      'process': 'sendImageGimp',
+      'socket': self.socket,
+      'paramProcess': {
+        'layerImages': self.layerImages,
+        'canvas': self.canvas,
+        'pathfileImage': self.pathfileImage
+      }
     }
-    self.setLabelLayer( self.dockWidgetGui.lblCurImage, self.layerImage )
-    self.setEnabledWidgetAdd( True )
-
-  @QtCore.pyqtSlot()
-  def addImageGimp(self):
-    def setParamsImageView():
-      def getIniCoord( cMinLayer, cPoint, res ):
-        return int( ( cPoint - cMinLayer ) / res ) * res + cMinLayer
-
-      def getEndCoord( cMaxLayer, cPoint, res ):
-        return cMaxLayer - ( int( ( cMaxLayer - cPoint ) / res ) * res )
-
-      mapSettings = self.canvas.mapSettings()
-      crsCanvas = mapSettings.destinationCrs()
-      extentCanvas = self.canvas.extent()
-
-      if self.layerImage.crs() != crsCanvas:
-        extentCanvas = mapSettings.mapToLayerCoordinates( self.layerImage, extentCanvas )
-
-      extentLayer = self.layerImage.extent()
-      if not extentCanvas.intersects( extentLayer ):
-        msg = "View not intersects Raster '%s'" % self.layerImage.name()
-        return { 'isOk': False, 'msg': msg }
-      if extentCanvas == extentLayer or extentCanvas.contains( extentLayer):
-        msg = "View has all raster '%s'" % self.layerImage.name()
-        return { 'isOk': False, 'msg': msg }
-
-      extent = extentCanvas.intersect( extentLayer )
-
-      ( resX, resY ) = ( self.paramsImage['res'][0], self.paramsImage['res'][1] )
-      iniX = getIniCoord( self.layerImage.extent().xMinimum(), extent.xMinimum(), resX )
-      iniY = getIniCoord( self.layerImage.extent().yMinimum(), extent.yMinimum(), resY )
-      endX = getEndCoord( self.layerImage.extent().xMaximum(), extent.xMaximum(), resX )
-      endY = getEndCoord( self.layerImage.extent().yMaximum(), extent.yMaximum(), resY )
-
-      extent.set( iniX,iniY, endX, endY  )
-      widthRead  = int( extent.width()  / resX )
-      heightRead = int( extent.height() / resY )
-
-      sf = '_view'
-      filename = path.splitext( self.paramsImage['filename'] )[0]
-      filename = "%s%s.tif" % ( filename, sf )
-
-      self.paramsImage['view']['filename']   = filename
-      self.paramsImage['view']['extent']     = extent
-      self.paramsImage['view']['widthRead']  = widthRead
-      self.paramsImage['view']['heightRead'] = heightRead
-
-      return { 'isOk': True }
-
-    if self.paramsImage is None:
-      return
-
-    if self.socket is None:
-      vreturn = self.setSocket()
-      if not vreturn['isOk']:
-        msgStatus = { 'msg': vreturn['msg'], 'type': QgsGui.QgsMessageBar.WARNING } 
-        self.messageStatusWorker( msgStatus )
-        return
-
-    if self.last_filename is None:
-       self.last_filename = self.paramsImage['filename']
-    else:
-      if self.last_filename == self.paramsImage['filename']:
-        value = QtGui.QMessageBox.question( self.dockWidgetGui,
-                                            self.nameModulus, "Confirm add image in GIMP?",
-                                            QtGui.QMessageBox.Yes | QtGui.QMessageBox.No, QtGui.QMessageBox.No )
-        if QtGui.QMessageBox.Yes == value:
-          self.last_filename = self.paramsImage['filename']
-        else:
-          return
-
-    checkState = self.dockWidgetGui.chkIsView.checkState()
-    self.paramsImage['view']['checkState'] = checkState
-    if QtCore.Qt.Checked == checkState:
-      vreturn = setParamsImageView()
-      if not vreturn['isOk']:
-        self.messageStatusWorker( { 'msg': vreturn['msg'], 'type': QgsGui.QgsMessageBar.WARNING } )
-        return
-
-    self.dockWidgetGui.lblStatus.setText( "Add image..." )
-    self.setEnabledWidgetAdd( False )
-
-    params = { 'paramsImage': self.paramsImage, 'socket': self.socket }
-    self.worker.setDataRun( params,  'addImageGimp')
+    if not self.layerPolygon is None and self.project.layerTreeRoot().findLayer( self.layerPolygon.id() ).isVisible():
+      p['paramProcess']['layerPolygon'] = self.layerPolygon
+    self.worker.setDataRun( p )
     self.thread.start()
-    #self.worker.run() # QtCore.qDebug("DEBUG 1")
+    #self.worker.run() # qDebug("DEBUG 1")
 
-  @QtCore.pyqtSlot()
-  def addFeatures(self):
+  @pyqtSlot()
+  def getFeatures(self):
     def createLayerPolygon():
-      atts = [ "id_add:integer", "image:string(200)", "datetime:string(20)", "crs:string(100)" ]
-      l_fields = map( lambda item: "field=%s" % item, atts  )
-      l_fields.insert( 0, "crs=epsg:4326" )
-      l_fields.append( "index=yes" )
-      s_fields = '&'.join( l_fields )
-      self.layerPolygon =  QgsCore.QgsVectorLayer( "Polygon?%s" % s_fields, "gimp_selection_polygon", "memory")
-      QgsCore.QgsMapLayerRegistry.instance().addMapLayer( self.layerPolygon )
-      self.layerPolygon.loadNamedStyle( os.path.join( os.path.dirname( __file__ ), "gimpselectionfeature.qml" ) )
-      self.iface.legendInterface().refreshLayerSymbology( self.layerPolygon )
-
-    if self.paramsImage is None:
-      return
+      r = { 'isOk': True }
+      fw, d = QgsVectorFileWriter, self.defLayerPolygon
+      writer = fw( d['fileName'], d['enconding'], d['fields'], d['type'], d['crs'], d['drive'] )
+      if writer.hasError() != QgsVectorFileWriter.NoError:
+        r = { 'isOk': False, 'message': writer.errorMessage() }
+      del writer
+      if not r['isOk']:
+        return r
+      fileNameExt, name = "{}.shp".format( d['fileName'] ), os.path.split( d['fileName'] )[-1]
+      r['layer'] = QgsVectorLayer( fileNameExt, name, 'ogr' )
+      return r
 
     if self.socket is None:
       vreturn = self.setSocket()
       if not vreturn['isOk']:
-        msgStatus = { 'msg': vreturn['msg'], 'type': QgsGui.QgsMessageBar.WARNING } 
+        msgStatus = { 'message': vreturn['message'], 'type': Qgis.Warning } 
         self.messageStatusWorker( msgStatus )
         return
 
-    checkState = self.dockWidgetGui.chkIsView.checkState()
-    self.paramsImage['view']['checkState'] = checkState
-    if QtCore.Qt.Checked == checkState:
-      if not self.paramsImage['view'].has_key('filename'):
-        msg = "Image view not found. Add image view"
-        self.messageStatusWorker( { 'msg': msg, 'type': QgsGui.QgsMessageBar.WARNING } )
-        return
-      filename = self.paramsImage['view']['filename']
-      if not path.exists( filename ):
-        msg = "Image view'%s' not found. Add image view again" % filename
-        self.messageStatusWorker( { 'msg': msg, 'type': QgsGui.QgsMessageBar.WARNING } )
-        return
-
-    self.dockWidgetGui.lblStatus.setText( "Add features..." )
-    self.setEnabledWidgetAdd( False )
+    msg = QCoreApplication.translate('GimpSelectionFeature', 'Add features...')
+    self.dockWidgetGui.lblStatus.setText( msg )
+    self.setEnabledWidgetTransfer( False )
 
     if self.layerPolygon is None:
-      createLayerPolygon()
+      r = self.GetFirstLayerPolygon()
+      if  r['isOk']:
+        self.layerPolygon = r['layer']
+        self.setMaximumValueAdd()
+      else:
+        r = createLayerPolygon()
+        if not r['isOk']:
+          self.msgBar.pushMessage( self.nameModulus, r['message'], Qgis.Critical )
+          return
+        self.layerPolygon = self.project.addMapLayer( r['layer'] )
+        self.worker.idAdd = 0
+
+    # Refresh Symbology
+    #QgsUtils.iface.layerTreeView().refreshLayerSymbology( self.layerPolygon.id() )
+    self.layerPolygon.loadNamedStyle( os.path.join( os.path.dirname( __file__ ), "gimpselectionfeature_no_expression.qml" ) )
+    ltl = self.root.findLayer( self.layerPolygon.id() )
+    ltl.setCustomProperty('showFeatureCount', True)
+    ltl.setItemVisibilityChecked( True )
 
     # paramSmooth: iter = interations, offset = 0.0 - 1.0(100%)
     # paramsSieve: threshold = Size in Pixel, connectedness = 4 or 8(diagonal)
     tSieve = self.dockWidgetGui.sbSieveThreshold.value() + 1
     tAzimuth = self.dockWidgetGui.sbAzimuthThreshold.value()
     offset = self.dockWidgetGui.spSmoothOffset.value() / 100.0
-    vinter = self.dockWidgetGui.sbSmoothIteration.value()
-
-    params = {
-      'paramsImage': self.paramsImage,
+    viter = self.dockWidgetGui.sbSmoothIteration.value()
+    p = {
+      'process': 'getFeatures',
       'socket': self.socket,
-      'paramSmooth': { 'iter': vinter, 'offset': offset },
-      'paramsSieve': { 'threshold': tSieve, 'connectedness': 4 },
-      'paramsAzimuth': { 'threshold': tAzimuth },
-      'layerPolygon': self.layerPolygon
+      'paramProcess': {
+        'layerPolygon': self.layerPolygon,
+        'pathfileImageSelect': self.pathfileImageSelect,
+        'annotation': self.dockWidgetGui.leditAnnotation.text(),
+        'smooth': { 'iter': viter, 'offset': offset },
+        'sieve': { 'threshold': tSieve, 'connectedness': 4 },
+        'azimuth': { 'threshold': tAzimuth }
+      }
     }
-    self.worker.setDataRun( params, 'addFeatures' )
+    self.worker.setDataRun( p )
     self.thread.start()
-    #self.worker.run() # QtCore.qDebug("DEBUG 1")
+    #self.worker.run() # qDebug("DEBUG 1")
 
-  @QtCore.pyqtSlot()
+  @pyqtSlot()
   def removeLastFeatures(self):
     isIniEditable = self.layerPolygon.isEditable()
     if not isIniEditable:
       self.layerPolygon.startEditing()
-    exp = QgsCore.QgsExpression( '"id_add" = %d' % self.lastAdd )
-    request = QgsCore.QgsFeatureRequest( exp )
-    request.setFlags( QgsCore.QgsFeatureRequest.NoGeometry )
+    exp = QgsExpression( '"id_add" = {}'.format( self.lastAdd ) )
+    request = QgsFeatureRequest( exp )
+    request.setFlags( QgsFeatureRequest.NoGeometry )
     it = self.layerPolygon.getFeatures( request )
     for feat in it:
       self.layerPolygon.deleteFeature( feat.id()  )
@@ -742,40 +756,41 @@ class GimpSelectionFeature(QtCore.QObject):
     self.dockWidgetGui.btnRemoveLastFeatures.setEnabled( False )
     self.lastAdd = None
 
-  @QtCore.pyqtSlot()
+  @pyqtSlot()
   def stopTransfer(self):
     def forceStop():
       if self.forceStopThread:
         self.finishThread()
         self.initThread()
 
-    self.dockWidgetGui.lblStatus.setText( "Stop..." )
+    msg = QCoreApplication.translate('GimpSelectionFeature', 'Stop Adding features...')
+    self.dockWidgetGui.lblStatus.setText( msg )
     if self.thread.isRunning():
       self.forceStopThread = True
       self.worker.isKilled = True
-      QtCore.QTimer.singleShot( 500, forceStop )
+      QTimer.singleShot( 500, forceStop )
 
-class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
+class DockWidgetGimpSelectionFeature(QDockWidget):
   def __init__(self, iface):
     def setupUi():
       def getLayout(parent, widgets):
-        lyt = QtGui.QGridLayout( parent )
+        lyt = QGridLayout( parent )
         for item in widgets:
-          if item.has_key('spam'):
+          if 'spam' in item:
             sRow, sCol = item['spam']['row'], item['spam']['col']
-            lyt.addWidget( item['widget'], item['row'], item['col'], sRow, sCol, QtCore.Qt.AlignLeft )
+            lyt.addWidget( item['widget'], item['row'], item['col'], sRow, sCol, Qt.AlignLeft )
           else:
-            lyt.addWidget( item['widget'], item['row'], item['col'], QtCore.Qt.AlignLeft )
+            lyt.addWidget( item['widget'], item['row'], item['col'], Qt.AlignLeft )
         return lyt
 
       def getGroupBox(name, parent, widgets):
         lyt = getLayout( parent, widgets )
-        gbx = QtGui.QGroupBox(name, parent )
+        gbx = QGroupBox(name, parent )
         gbx.setLayout( lyt )
         return gbx
 
       def getSpinBoxOffset(wgt, value):
-        sp = QtGui.QDoubleSpinBox( wgt)
+        sp = QDoubleSpinBox( wgt)
         sp.setRange(0.0, 50.0)
         sp.setSingleStep(12.5)
         sp.setDecimals(2)
@@ -784,7 +799,7 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
         return sp
 
       def getSpinBoxSieve(wgt, value):
-        sp = QtGui.QSpinBox( wgt)
+        sp = QSpinBox( wgt)
         sp.setMinimum(0.0)
         sp.setSingleStep(1)
         sp.setSuffix(' pixels')
@@ -792,103 +807,109 @@ class DockWidgetGimpSelectionFeature(QtGui.QDockWidget):
         return sp
 
       def getSpinBoxAzimuth(wgt, value):
-        sp = QtGui.QSpinBox( wgt)
+        sp = QSpinBox( wgt)
         sp.setRange(0, 45)
         sp.setSingleStep(1)
         sp.setSuffix(' degrees')
         sp.setValue(value)
-        sp.setToolTip("Degrees of azimuth between vertexs")
+        msg = QCoreApplication.translate('GimpSelectionFeature', 'Degrees of azimuth between vertexs')
+        sp.setToolTip( msg )
         return sp
 
       def getSpinBoxIteration(wgt, value):
-        sp = QtGui.QSpinBox( wgt)
+        sp = QSpinBox( wgt)
         sp.setRange(0, 3)
         sp.setSingleStep(1)
         sp.setValue(value)
         return sp
 
-      def getLineEditInteger(wgt, value):
-        le = QtGui.QLineEdit( wgt )
-        validator = QtGui.QIntValidator( wgt )
-        le.setValidator( validator )
-        le.setText( str(value) )
-        return le
-
-      self.setObjectName( "gimpselectionfeature_dockwidget" )
-      wgt = QtGui.QWidget( self )
-      wgt.setAttribute(QtCore.Qt.WA_DeleteOnClose)
+      self.setObjectName('gimpselectionfeature_dockwidget')
+      wgt = QWidget( self )
+      wgt.setAttribute(Qt.WA_DeleteOnClose)
       # Image
       width = 180
-      self.lblCurImage = QtGui.QLabel("", wgt )
-      self.lblCurImage.setMaximumWidth(width )
-      self.btnSelectImage = QtGui.QPushButton("Set current:", wgt )
-      self.lblSelectImage = QtGui.QLabel("Select in legend", wgt )
-      self.lblSelectImage.setMaximumWidth( width )
-      l_wts = [
-        { 'widget': QtGui.QLabel("Current:", wgt ), 'row': 0, 'col': 0 },
-        { 'widget': self.lblCurImage,               'row': 0, 'col': 1 },
-        { 'widget': self.btnSelectImage,            'row': 1, 'col': 0 },
-        { 'widget': self.lblSelectImage,            'row': 1, 'col': 1 }
-      ]
-      gbxImage = getGroupBox( "Image", wgt, l_wts)
+      self.lblLegendImages = QLabel('', wgt )
+      self.lblLegendImages.setWordWrap( True )
+      self.lblLegendImages.setMaximumWidth(width )
+      l_wts = [ { 'widget': self.lblLegendImages,     'row': 0, 'col': 0 } ]
+      name = self.formatTitleImages.format(0)
+      self.gbxImage = getGroupBox(name, wgt, l_wts)
       # Transfer
-      self.chkIsView = QtGui.QCheckBox("Image view", wgt)
-      self.btnAddImage = QtGui.QPushButton("Send image", wgt )
-      self.btnAddFeatures = QtGui.QPushButton("Get features", wgt )
-      self.btnRemoveLastFeatures = QtGui.QPushButton("Remove last features", wgt )
+      msg = QCoreApplication.translate('GimpSelectionFeature', 'Send image')
+      self.btnSendImage = QPushButton(msg, wgt )
+      #
+      msg = QCoreApplication.translate('GimpSelectionFeature', 'Get features')
+      self.btnGetFeatures = QPushButton( msg, wgt )
+      msg = QCoreApplication.translate('GimpSelectionFeature', 'Remove last features')
+      self.btnRemoveLastFeatures = QPushButton( msg, wgt )
+      #
+      self.leditAnnotation = QLineEdit( wgt )
       self.sbSieveThreshold = getSpinBoxSieve( wgt, 5 )
       self.sbAzimuthThreshold = getSpinBoxAzimuth( wgt, 0 )
       self.spSmoothOffset = getSpinBoxOffset( wgt, 25 )
       self.sbSmoothIteration  = getSpinBoxIteration( wgt, 1)
-      self.btnStopTransfer = QtGui.QPushButton("Stop transfer", wgt )
-      self.lblStatus = QtGui.QLabel("", wgt )
+      msg = QCoreApplication.translate('GimpSelectionFeature', 'Stop transfer')
+      self.btnStopTransfer = QPushButton( msg, wgt )
+      self.lblStatus = QLabel("", wgt )
+      msgLevel = QCoreApplication.translate('GimpSelectionFeature','Level(0-3):')
+      msgFraction = QCoreApplication.translate('GimpSelectionFeature','Fraction of line(0-50):')
       l_wts = [
-        { 'widget': QtGui.QLabel("Level(0-3):", wgt ),             'row': 0, 'col': 0 },
-        { 'widget': self.sbSmoothIteration,                        'row': 0, 'col': 1 },
-        { 'widget': QtGui.QLabel("Fraction of line(0-50):", wgt ), 'row': 1, 'col': 0 },
-        { 'widget': self.spSmoothOffset,                           'row': 1, 'col': 1 }
+        { 'widget': QLabel( msgLevel, wgt ),    'row': 0, 'col': 0 },
+        { 'widget': self.sbSmoothIteration,     'row': 0, 'col': 1 },
+        { 'widget': QLabel( msgFraction, wgt ), 'row': 1, 'col': 0 },
+        { 'widget': self.spSmoothOffset,        'row': 1, 'col': 1 }
       ]
-      gbxSmooth = getGroupBox( "Smooth", wgt, l_wts)
+      msg = QCoreApplication.translate('GimpSelectionFeature', 'Smooth')
+      gbxSmooth = getGroupBox( msg, wgt, l_wts)
       spamSmooth = { 'row': 1, 'col': 2 }
+      msgAnnotation   = QCoreApplication.translate('GimpSelectionFeature', 'Annotation:' )
+      msgRemoveArea   = QCoreApplication.translate('GimpSelectionFeature', 'Remove Area:' )
+      msgRemoveVertex = QCoreApplication.translate('GimpSelectionFeature', 'Remove Vertex:' )
       l_wts = [
-        { 'widget': QtGui.QLabel("Remove Area:", wgt ), 'row': 0, 'col': 0 },
-        { 'widget': self.sbSieveThreshold,              'row': 0, 'col': 1 },
-        { 'widget': QtGui.QLabel("Remove Vertex:", wgt ),     'row': 1, 'col': 0 },
-        { 'widget': self.sbAzimuthThreshold,            'row': 1, 'col': 1 },
-        { 'widget': gbxSmooth,                          'row': 2, 'col': 0, 'spam': spamSmooth }
+        { 'widget': QLabel( msgAnnotation, wgt ),   'row': 0, 'col': 0 },
+        { 'widget': self.leditAnnotation,           'row': 0, 'col': 1 },
+        { 'widget': QLabel( msgRemoveArea, wgt ),   'row': 1, 'col': 0 },
+        { 'widget': self.sbSieveThreshold,          'row': 1, 'col': 1 },
+        { 'widget': QLabel( msgRemoveVertex, wgt ), 'row': 2, 'col': 0 },
+        { 'widget': self.sbAzimuthThreshold,        'row': 2, 'col': 1 },
+        { 'widget': gbxSmooth,                      'row': 3, 'col': 0, 'spam': spamSmooth }
       ]
-      self.gbxSettingFeatures = getGroupBox( "Setting", wgt, l_wts)
+      msg = QCoreApplication.translate('GimpSelectionFeature', 'Setting' )
+      self.gbxSettingFeatures = getGroupBox( msg, wgt, l_wts)
       spamSetting = { 'row': 1, 'col': 2 }
       l_wts = [
-        { 'widget': self.btnAddFeatures,        'row': 0, 'col': 0 },
+        { 'widget': self.btnGetFeatures,        'row': 0, 'col': 0 },
         { 'widget': self.btnRemoveLastFeatures, 'row': 0, 'col': 1 },
         { 'widget': self.gbxSettingFeatures,    'row': 1, 'col': 0, 'spam': spamSetting }
       ]
       gbxGQ = getGroupBox( "GIMP->QGIS", wgt, l_wts)
       l_wts = [
-        { 'widget': self.btnAddImage,        'row': 0, 'col': 0 }
+        { 'widget': self.btnSendImage,        'row': 0, 'col': 0 }
       ]
       gbxQG = getGroupBox( "QGIS->GIMP", wgt, l_wts)
       spamGroup = { 'row': 1, 'col': 2 }
       l_wts = [
-        { 'widget': self.chkIsView,       'row': 0, 'col': 0 },
-        { 'widget': self.btnStopTransfer, 'row': 0, 'col': 1 },
+        { 'widget': self.btnStopTransfer, 'row': 0, 'col': 0 },
         { 'widget': gbxQG,                'row': 1, 'col': 0, 'spam': spamGroup },
         { 'widget': gbxGQ,                'row': 2, 'col': 0, 'spam': spamGroup }
       ]
-      gbxTransfer = getGroupBox( "Transfer", wgt, l_wts)
+      msg = QCoreApplication.translate('GimpSelectionFeature', 'Transfer' )
+      gbxTransfer = getGroupBox( msg, wgt, l_wts)
       #
       l_wts = [
-        { 'widget': gbxImage,       'row': 0, 'col': 0 },
+        { 'widget': self.gbxImage,  'row': 0, 'col': 0 },
         { 'widget': gbxTransfer,    'row': 1, 'col': 0 },
         { 'widget': self.lblStatus, 'row': 2, 'col': 0 }
       ]
       lyt = getLayout( wgt, l_wts )
-      wgt.setLayout( lyt)
+      lyt.setSizeConstraint( QLayout.SetMaximumSize )
+      wgt.setLayout( lyt )
       self.setWidget( wgt )
 
-    super( DockWidgetGimpSelectionFeature, self ).__init__( "Gimp Selection Feature", iface.mainWindow() )
+    super().__init__( "Gimp Selection Feature", iface.mainWindow() )
     #
+    msg = QCoreApplication.translate('GimpSelectionFeature', 'Visibles Images(total {})')
+    self.formatTitleImages = msg
     setupUi()
     self.gsf = GimpSelectionFeature( iface, self )
 
