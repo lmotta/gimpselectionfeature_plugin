@@ -22,7 +22,7 @@ repository:https://github.com/lmotta/gimpselectionfeature_plugin
 
 icon:gimpselectionfeature.svg
 
-experimental:True
+experimental:False
 deprecated:False
 
 changelog: 1.0 (2018-12-06)
