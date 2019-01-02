@@ -278,7 +278,7 @@ class WorkerGimpSelectionFeature(QObject):
       self.finishedWarning( msgKilled )
       return
 
-    totalFeats = len( vreturn['geoms'] ) 
+    totalFeats = len( vreturn['geoms'] )
     if totalFeats  == 0:
       msg = "Not found features in selections ('{}')".format( self.paramProcess['pathfileImageSelect'] )
       self.finishedWarning( msg )
@@ -290,10 +290,6 @@ class WorkerGimpSelectionFeature(QObject):
 
     feat = QgsFeature( layerPolygon.dataProvider().fields() )
     addAttribute( feat )
-
-    isIniEditable = layerPolygon.isEditable()
-    if not isIniEditable:
-      layerPolygon.startEditing()
 
     p_iter = self.paramProcess['smooth']['iter']
     p_offset = self.paramProcess['smooth']['offset']
@@ -308,10 +304,6 @@ class WorkerGimpSelectionFeature(QObject):
       del geomLayer
 
     feat = None
-    layerPolygon.commitChanges()
-    if isIniEditable:
-      layerPolygon.startEditing()
-    layerPolygon.updateExtents()
     msg = QCoreApplication.translate('GimpSelectionFeature', "Added {} features in '{}'")
     msg = msg.format( totalFeats, layerPolygon.name() )
     self.messageStatus.emit( { 'type': Qgis.Info, 'message': msg  } )
@@ -422,7 +414,7 @@ class GimpSelectionFeature(QObject):
 
     super().__init__()
     self.dockWidgetGui = dockWidgetGui
-    self.layerPolygon, self.lastAdd = None, None
+    self.layerPolygon, self.isIniEditable, self.lastAdd = None, None, None
     self.layerImages = []
     self.thread, self.socket, self.forceStopThread, self.hasConnect = None, None, None, None
     self.canvas, self.msgBar = iface.mapCanvas(), iface.messageBar()
@@ -605,6 +597,12 @@ class GimpSelectionFeature(QObject):
       self.canvas.refresh()
       highlight()
 
+    def endEditable():
+      self.layerPolygon.commitChanges() # Worker in thread NOT commit!
+      self.layerPolygon.updateExtents()
+      if self.isIniEditable:
+        self.layerPolygon.startEditing()
+
     self.dockWidgetGui.lblStatus.clear()
 
     self.thread.quit()
@@ -613,6 +611,7 @@ class GimpSelectionFeature(QObject):
 
     if data['isOk']:
       if data['process'] == 'getFeatures':
+        endEditable()
         self.layerPolygon.loadNamedStyle( os.path.join( os.path.dirname( __file__ ), "gimpselectionfeature_with_expression.qml" ) )
         self.lastAdd = data['lastAdd']
         zoomToBBox( data['bboxFeats'] )
@@ -685,6 +684,11 @@ class GimpSelectionFeature(QObject):
       r['layer'] = QgsVectorLayer( fileNameExt, name, 'ogr' )
       return r
 
+    def startEditable():
+      self.isIniEditable = self.layerPolygon.isEditable()
+      if not self.isIniEditable:
+        self.layerPolygon.startEditing()
+
     if self.socket is None:
       vreturn = self.setSocket()
       if not vreturn['isOk']:
@@ -734,14 +738,15 @@ class GimpSelectionFeature(QObject):
         'azimuth': { 'threshold': tAzimuth }
       }
     }
+    startEditable() # Worker in thread NOT commit - commit in 'finishedWorker.endEditable'
     self.worker.setDataRun( p )
     self.thread.start()
     #self.worker.run() # qDebug("DEBUG 1")
 
   @pyqtSlot()
   def removeLastFeatures(self):
-    isIniEditable = self.layerPolygon.isEditable()
-    if not isIniEditable:
+    self.isIniEditable = self.layerPolygon.isEditable()
+    if not self.isIniEditable:
       self.layerPolygon.startEditing()
     exp = QgsExpression( '"id_add" = {}'.format( self.lastAdd ) )
     request = QgsFeatureRequest( exp )
@@ -750,7 +755,7 @@ class GimpSelectionFeature(QObject):
     for feat in it:
       self.layerPolygon.deleteFeature( feat.id()  )
     self.layerPolygon.commitChanges()
-    if isIniEditable:
+    if self.isIniEditable:
       self.layerPolygon.startEditing()
     self.layerPolygon.updateExtents()
     self.dockWidgetGui.btnRemoveLastFeatures.setEnabled( False )
@@ -800,7 +805,7 @@ class DockWidgetGimpSelectionFeature(QDockWidget):
 
       def getSpinBoxSieve(wgt, value):
         sp = QSpinBox( wgt)
-        sp.setMinimum(0.0)
+        sp.setRange(0, 200)
         sp.setSingleStep(1)
         sp.setSuffix(' pixels')
         sp.setValue(value)
