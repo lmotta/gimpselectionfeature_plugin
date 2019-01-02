@@ -12,6 +12,8 @@ Plugin for adding selected area in GIMP how a feature in polygon layer.
 Luiz Motta
 
 ## Changelog
+- 2019-01-02
+Commit features in main thread and maximum remove area to 200 pixels
 - 2018-12-06
 Migrated to QGIS 3.2
 - 2016-06-29

@@ -6,7 +6,7 @@ about:This plugin create a polygon layer, where, yours feature can come from sel
   http://www.ibama.gov.br
   Tested with GIMP 2.10
 
-version:1.0
+version:1.1
 qgisMinimumVersion:3.2
 
 author:Luiz Motta
@@ -25,7 +25,9 @@ icon:gimpselectionfeature.svg
 experimental:False
 deprecated:False
 
-changelog: 1.0 (2018-12-06)
+changelog: 1.1 (2019-01-02)
+  Commit features in main thread and maximum remove area to 200 pixels
+  - 1.0 (2018-12-06)
   Migrated to QGIS 3.2
   - 0.4
   Change Azimuth (Not sum 360) and change labels Add(Send,Get)
