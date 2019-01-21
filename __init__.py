@@ -77,7 +77,7 @@ class GimpSelectionFeaturePlugin(QObject):
       self.exitsPluginGimp = { 'isOk': True }
 
     name = "Gimp Selection Feature"
-    about = QCoreApplication.translate('GimpSelectionFeature', 'Adding selected area in GIMP how a feature in memory layer')
+    about = QCoreApplication.translate('GimpSelectionFeature', 'Adding selected area in GIMP how a feature in shapefile')
     icon = QIcon( os.path.join( os.path.dirname(__file__), 'gimpselectionfeature.svg' ) )
     self.action = QAction( icon, name, self.iface.mainWindow() )
     self.action.setObjectName( name.replace(' ', '') )
