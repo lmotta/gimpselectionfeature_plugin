@@ -18,6 +18,13 @@ email                : motta.luiz@gmail.com
  *                                                                         *
  ***************************************************************************/
 """
+
+__author__ = 'Luiz Motta'
+__date__ = '2016-06-16'
+__copyright__ = '(C) 2018, Luiz Motta'
+__revision__ = '$Format:%H$'
+
+
 import os, sys, json, datetime, socket, math
 
 from os import path
@@ -32,7 +39,7 @@ from qgis.PyQt.QtWidgets import (
   QSpinBox, QLineEdit, QWidget, QLabel, QPushButton, QLineEdit, QCheckBox
 )
 from qgis.core import (
-  QgsApplication, QgsProject, Qgis, QgsWkbTypes, QgsMapSettings,
+  QgsApplication, QgsProject, Qgis, QgsMapSettings,
   QgsMapRendererParallelJob, QgsTask,
   QgsMapLayer, QgsVectorLayer, QgsVectorFileWriter, QgsFeatureRequest,
   QgsFeature, QgsField, QgsFields, QgsExpression, QgsGeometry, QgsRectangle, QgsWkbTypes,
@@ -41,9 +48,10 @@ from qgis.core import (
 from qgis.gui import QgsRubberBand
 from qgis import utils as QgsUtils
 
-from osgeo import gdal, ogr, osr, gdalconst
+from osgeo import gdal, ogr, osr
 
 from .json2html import getHtmlTreeMetadata
+
 
 class DockWidgetGimpSelectionFeature(QDockWidget):
   def __init__(self, iface):
@@ -178,7 +186,7 @@ class DockWidgetGimpSelectionFeature(QDockWidget):
 
     super().__init__( "Gimp Selection Feature", iface.mainWindow() )
     #
-    msg = QCoreApplication.translate('GimpSelectionFeature', 'Visibles Images(total {})')
+    msg = QCoreApplication.translate('GimpSelectionFeature', 'Visibles Images(total  {})')
     self.formatTitleImages = msg
     setupUi()
     self.gsf = GimpSelectionFeature( iface, self )
@@ -237,6 +245,7 @@ class GimpSelectionFeature(QObject):
     self.socket, self.hasConnect = None, None
     self.canvas, self.msgBar = iface.mapCanvas(), iface.messageBar()
     self.project = QgsProject.instance()
+    self.taskManager = QgsApplication.taskManager()
     self.root = self.project.layerTreeRoot()
     dirs = createDirectories()
     self.pathfileImage = os.path.join( dirs['image'], 'tmp_gimp-plugin.tif' )
@@ -408,7 +417,7 @@ class GimpSelectionFeature(QObject):
     task = QgsTask.fromFunction('GimpSelectionFeature Task', run, dataRun, on_finished=finished )
     if not self.layerPolygon is None:
       task.setDependentLayers( [ self.layerPolygon ] )
-    QgsApplication.taskManager().addTask( task )
+    self.taskManager.addTask( task )
 
   @pyqtSlot('QDomDocument')
   def readProject(self, dom=None):
@@ -606,7 +615,7 @@ class WorkerTaskGimpSelectionFeature():
     def getGeorefImage():
      # Show error _TIFFVSetField: when read Selected Image
      # Try use 'gdal.UseExceptions()' and try / except RuntimeError: but not work..
-      ds = gdal.Open( self.paramProcess['pathfileImageSelect'], gdalconst.GA_Update )
+      ds = gdal.Open( self.paramProcess['pathfileImageSelect'], gdal.GA_Update )
       if gdal.GetLastErrorType() != 0:
         return { 'isOk': False, 'message': gdal.GetLastErrorMsg() }
 

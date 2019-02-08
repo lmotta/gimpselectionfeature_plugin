@@ -18,6 +18,12 @@ email                : motta.luiz@gmail.com
  *                                                                         *
  ***************************************************************************/
 """
+__author__ = 'Luiz Motta'
+__date__ = '2016-06-16'
+__copyright__ = '(C) 2018, Luiz Motta'
+__revision__ = '$Format:%H$'
+
+
 import os, stat, sys, re, shutil, filecmp
 
 from qgis.PyQt.QtCore import Qt, QObject, pyqtSlot, QCoreApplication

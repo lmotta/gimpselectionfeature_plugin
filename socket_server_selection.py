@@ -20,6 +20,12 @@ email                : motta.luiz@gmail.com
  ***************************************************************************/
 """
 
+__author__ = 'Luiz Motta'
+__date__ = '2016-06-01'
+__copyright__ = '(C) 2015, Luiz Motta'
+__revision__ = '$Format:%H$'
+
+
 from gimpfu import gimp, pdb, register, main
 from gimpshelf import shelf as gimp_shelf
 
@@ -64,7 +70,7 @@ class SocketService(object):
 
       try:
         data = json.loads( sdata )
-      except ValueError, e:
+      except ValueError:
         continue
 
       if not 'function' in data:
