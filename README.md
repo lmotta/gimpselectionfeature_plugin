@@ -12,6 +12,8 @@ Plugin for adding selected area in GIMP how a feature in polygon layer.
 Luiz Motta
 
 ## Changelog
+-2019-02-08)
+Create self.taskManager for Add task
 - 2019-01-21
 Background process changed for QgsTask
 - 2019-01-02
