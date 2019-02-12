@@ -30,27 +30,31 @@ import os, sys, json, datetime, socket, math
 from os import path
 
 from qgis.PyQt.QtCore import (
-  Qt, QVariant, QObject, QCoreApplication, QTimer, 
+  QCoreApplication, Qt,
+  QVariant, QObject,
   pyqtSlot, pyqtSignal
 )
-from qgis.PyQt.QtGui import QImage, QColor, QIntValidator
+from qgis.PyQt.QtGui import QImage, QColor 
 from qgis.PyQt.QtWidgets import (
-  QMessageBox, QDockWidget, QLayout, QGridLayout, QGroupBox, QDoubleSpinBox,
-  QSpinBox, QLineEdit, QWidget, QLabel, QPushButton, QLineEdit, QCheckBox
+  QWidget, QDockWidget,
+  QLayout, QGridLayout,
+  QGroupBox, QDoubleSpinBox,
+  QSpinBox, QLineEdit, QLabel, QPushButton, QLineEdit 
 )
 from qgis.core import (
   QgsApplication, QgsProject, Qgis, QgsMapSettings,
-  QgsMapRendererParallelJob, QgsTask,
+  QgsTask, QgsMapRendererParallelJob,
   QgsMapLayer, QgsVectorLayer, QgsVectorFileWriter, QgsFeatureRequest,
-  QgsFeature, QgsField, QgsFields, QgsExpression, QgsGeometry, QgsRectangle, QgsWkbTypes,
-  QgsCoordinateTransform, QgsCoordinateReferenceSystem 
+  QgsFeature, QgsField, QgsFields,
+  QgsExpression,
+  QgsCoordinateReferenceSystem,
+  QgsGeometry, QgsRectangle, QgsWkbTypes,
 )
-from qgis.gui import QgsRubberBand
-from qgis import utils as QgsUtils
 
 from osgeo import gdal, ogr, osr
 
 from .json2html import getHtmlTreeMetadata
+from .mapcanvaseffects import MapCanvasEffects
 
 
 class DockWidgetGimpSelectionFeature(QDockWidget):
@@ -245,6 +249,7 @@ class GimpSelectionFeature(QObject):
     self.socket, self.hasConnect = None, None
     self.canvas, self.msgBar = iface.mapCanvas(), iface.messageBar()
     self.project = QgsProject.instance()
+    self.mapCanvasEffects = MapCanvasEffects()
     self.taskManager = QgsApplication.taskManager()
     self.root = self.project.layerTreeRoot()
     dirs = createDirectories()
@@ -367,29 +372,9 @@ class GimpSelectionFeature(QObject):
           self.layerPolygon.startEditing()
 
       def setRenderLayer():
-        def zoomToBBox(bboxFeats):
-          def highlight():
-            def removeRB():
-                rb.reset( True )
-                self.canvas.scene().removeItem( rb )
-
-            rb = QgsRubberBand( self.canvas, QgsWkbTypes.PolygonGeometry)
-            rb.setStrokeColor( QColor( 255,  0, 0 ) )
-            rb.setWidth( 2 )
-            rb.setToGeometry( QgsGeometry.fromRect( extent ), None )
-            QTimer.singleShot( 2000, removeRB )
-
-          crsCanvas = self.canvas.mapSettings().destinationCrs()
-          ct = QgsCoordinateTransform( self.layerPolygon.crs(), crsCanvas, self.project )
-          extent = ct.transform( bboxFeats )
-          self.canvas.setExtent( extent )
-          self.canvas.zoomByFactor( 1.05 )
-          self.canvas.refresh()
-          highlight()
-
         fileStyle = os.path.join( os.path.dirname( __file__ ), "gimpselectionfeature_with_expression.qml" )
         self.layerPolygon.loadNamedStyle( fileStyle )
-        zoomToBBox( dataResult['bboxFeats'] )
+        self.mapCanvasEffects.zoom( self.layerPolygon, dataResult['geomBBox'] )
       
       self.msgBar.clearWidgets()
       if exception:
@@ -408,7 +393,6 @@ class GimpSelectionFeature(QObject):
       else:
         self.setEnabledWidgetTransfer( True )
 
-      
     def run(task, data):
       self.worker.setData( task, data )
       return self.worker.run()
@@ -808,13 +792,13 @@ class WorkerTaskGimpSelectionFeature():
 
     msg = QCoreApplication.translate('GimpSelectionFeature', "Added {} features in '{}'")
     msg = msg.format( totalFeats, self.paramProcess['layerPolygon'].name() )
-    bboxFeats = QgsRectangle( envFeats[0], envFeats[2], envFeats[1], envFeats[3] )
+    geomBBox = QgsGeometry.fromRect( QgsRectangle( envFeats[0], envFeats[2], envFeats[1], envFeats[3] ) )
     return {
       'isOk': True,
       'message': msg,
       'level': Qgis.Info,
       'process': 'getFeatures',
-      'bboxFeats': bboxFeats
+      'geomBBox': geomBBox
     }
 
   def sendImageGimp(self):

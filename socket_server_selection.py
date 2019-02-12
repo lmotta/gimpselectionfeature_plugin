@@ -117,9 +117,9 @@ class SocketService(object):
     return { 'isOk': True }
 
   def add_image(self):
-    vreturn = self.isTifImage()
-    if not vreturn['isOk']:
-      self.conn.send( json.dumps( vreturn ) )
+    r = self.isTifImage()
+    if not r['isOk']:
+      self.conn.send( json.dumps( r ) )
       return
 
     if self.pathfileImage in self.addedImages:
