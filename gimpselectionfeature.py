@@ -596,13 +596,7 @@ class WorkerTaskGimpSelectionFeature():
     return { 'isOk': False, 'message': message, 'process': process, 'level': level }
 
   def getFeatures(self):
-    def getGeorefImage():
-     # Show error _TIFFVSetField: when read Selected Image
-     # Try use 'gdal.UseExceptions()' and try / except RuntimeError: but not work..
-      ds = gdal.Open( self.paramProcess['pathfileImageSelect'], gdal.GA_Update )
-      if gdal.GetLastErrorType() != 0:
-        return { 'isOk': False, 'message': gdal.GetLastErrorMsg() }
-
+    def getParamsTransform():
       p = paramsImgSel
       smin, smax = p['extent_map'].split(',')
       ulX = float( smin.split(' ')[0])
@@ -610,16 +604,18 @@ class WorkerTaskGimpSelectionFeature():
       ulX_SelImage = ulX + p['ulPixelSelect']['X'] *  p['res']['X']
       ulY_SelImage = ulY - p['ulPixelSelect']['Y'] *  p['res']['Y']
 
-      transform = ( ulX_SelImage,  p['res']['X'], 0.0, ulY_SelImage, 0.0, -1 *  p['res']['Y'] )
-      ds.SetGeoTransform( transform )
-      ds.SetProjection( wktProj )
+      return ( ulX_SelImage,  p['res']['X'], 0.0, ulY_SelImage, 0.0, -1 *  p['res']['Y'] )
+
+    def getBandSelect():
+      ds = gdal.Open( self.paramProcess['pathfileImageSelect'], gdal.GA_ReadOnly )
+      if gdal.GetLastErrorType() != 0:
+        return { 'isOk': False, 'message': gdal.GetLastErrorMsg() }
 
       band = ds.GetRasterBand( 1 )
       band.SetNoDataValue( 0.0 )
+      return { 'isOk': True, 'dataset': ds, 'band': band}
 
-      return { 'isOk': True, 'dataset': ds }
-
-    def polygonizeSelectionImage(ds_img):
+    def polygonizeSelectionBand():
       def setGeomAzimuthTolerance(geom, threshold):
         def changeRing(ring):
           def azimuth(p1, p2):
@@ -662,17 +658,15 @@ class WorkerTaskGimpSelectionFeature():
               ring = polygon.GetGeometryRef( id2)
               changeRing( ring )
 
-      band = ds_img.GetRasterBand( 1 )
       # Sieve Band
-      drv = gdal.GetDriverByName('MEM')
-      ds_sieve = drv.Create( '', ds_img.RasterXSize, ds_img.RasterYSize,1, band.DataType )
-      ds_sieve.SetGeoTransform( ds_img.GetGeoTransform() )
+      drvMem = gdal.GetDriverByName('MEM')
+      ds_sieve = drvMem.Create( '', ds_Select.RasterXSize, ds_Select.RasterYSize, 1, band_Select.DataType )
+      ds_sieve.SetGeoTransform( paramsTransform )
       band_sieve = ds_sieve.GetRasterBand(1)
 
       p_threshold = self.paramProcess['sieve']['threshold']
       p_connectedness = self.paramProcess['sieve']['connectedness']
-      gdal.SieveFilter( band, None, band_sieve, p_threshold, p_connectedness, [], callback=None )
-      ds_img, band = None, None
+      gdal.SieveFilter( band_Select, None, band_sieve, p_threshold, p_connectedness, [], callback=None )
       if gdal.GetLastErrorType() != 0:
         return { 'isOk': False, 'message': gdal.GetLastErrorMsg() }
 
@@ -766,22 +760,27 @@ class WorkerTaskGimpSelectionFeature():
 
     if self.task.isCanceled():
       return { 'isOk': False }
-    wktProj = QgsCoordinateReferenceSystem( paramsImgSel['crs_map'] ).toWkt()
     
-    r = getGeorefImage()
+    r = getBandSelect()
     if not r['isOk']:
       return self.getErrorReturn( r['message'], process )
     if self.task.isCanceled():
+      band_Select, ds_Select = None, None
       return { 'isOk': False }
-    ds_img = r['dataset']
+    ds_Select = r['dataset']
+    band_Select =  r['band']
+    wktProj = QgsCoordinateReferenceSystem( paramsImgSel['crs_map'] ).toWkt()
+    paramsTransform = getParamsTransform()
 
-    r = polygonizeSelectionImage( ds_img )
+    r = polygonizeSelectionBand()
+    band_Select, ds_Select = None, None
     if not r['isOk']:
       return self.getErrorReturn( r['message'], process )
     if self.task.isCanceled():
+      del r['geoms'][:]
       return { 'isOk': False }
     geoms = r['geoms']
-
+    
     totalFeats = len( geoms )
     if totalFeats  == 0:
       msg = QCoreApplication.translate('GimpSelectionFeature', "Not found features in selections ('{}')")
