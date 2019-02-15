@@ -5,6 +5,7 @@
 *.sh
 shp
 img
+db
 # Ignore
 !create_zip_plugin.sh
 # Diretory ./i18n NEED .gitignore!
