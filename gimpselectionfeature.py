@@ -331,12 +331,12 @@ class GimpSelectionFeature(QObject):
       totalImages = len( self.layerImages )
       if totalImages > 0:
         names = list( map( lambda l: l.name(), self.layerImages ) )
-        txtLegend = "{}\n".format( names[0] ) if len( names ) == 1 else '\n'.join( names )
+        txtLegend = f"{names[0]}\n" if len( names ) == 1 else '\n'.join( names )
         hasImages = True
     
     title = self.dockWidgetGui.formatTitleImages.format( totalImages )
     if not self.layerPolygon is None and totalImages > 0 and self.project.layerTreeRoot().findLayer( self.layerPolygon.id() ).isVisible():
-      title = "{} and {}".format( title, self.layerPolygon.name() )
+      title = f"{title} and {self.layerPolygon.name()}"
     self.dockWidgetGui.gbxImage.setTitle( title )
     self.dockWidgetGui.lblLegendImages.setText( txtLegend )
     self.dockWidgetGui.btnSendImage.setEnabled( hasImages )
@@ -601,7 +601,7 @@ class GimpSelectionFeature(QObject):
     self.isIniEditable = self.layerPolygon.isEditable()
     if not self.isIniEditable:
       self.layerPolygon.startEditing()
-    exp = QgsExpression( '"id_add" = {}'.format( self.getMaximumValueAdd() ) )
+    exp = QgsExpression( f"\"id_add\" = {self.getMaximumValueAdd()}" )
     request = QgsFeatureRequest( exp )
     request.setFlags( QgsFeatureRequest.NoGeometry )
     it = self.layerPolygon.getFeatures( request )

@@ -70,7 +70,7 @@ class GimpSelectionFeaturePlugin(QObject):
       nameDirPlugin = "plug-ins"
       dirPluginGimp = getDirPluginGimp()
       if dirPluginGimp is None:
-        msg = "Not found diretory 'GIMP' or 'GIMP {}' in '{}'".format( nameDirPlugin, dirHome )
+        msg = f"Not found diretory 'GIMP' or 'GIMP {nameDirPlugin}' in '{dirHome}'"
         self.exitsPluginGimp = { 'isOk': False, 'msg': msg }
         return
 
