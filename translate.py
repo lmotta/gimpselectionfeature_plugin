@@ -33,7 +33,7 @@ class Translate():
       localeFullName = QLocale.system().name() if not overrideLocale else QSettings().value('locale/userLocale', '')
       qmPathFile = f"i18n/{pluginName}_{localeFullName}.qm"
       pluginPath = os.path.dirname(__file__)
-      translationFile = f"{pluginName}/{qmPathFile}"
+      translationFile = f"{pluginPath}/{qmPathFile}"
       return translationFile
 
     self.translator = None
