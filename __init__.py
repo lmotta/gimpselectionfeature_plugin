@@ -52,7 +52,7 @@ class GimpSelectionFeaturePlugin(QObject):
     def setExistsPluginGimp():
       def getDirPluginGimp():
         dirPlugin = None
-        mask = r".*gimp.[0-9]+.[0-9]+/%s" % nameDirPlugin # Linux Format
+        mask = r".*/GIMP/[0-9]+.[0-9]+/{}$".format( nameDirPlugin )
         for root, dirs, files in os.walk( dirHome ):
           if re.match( mask, root.replace('\\', '/'), re.IGNORECASE ):
             dirPlugin = root
