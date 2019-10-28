@@ -25,7 +25,8 @@ __copyright__ = '(C) 2018, Luiz Motta'
 __revision__ = '$Format:%H$'
 
 
-import os, sys, json, datetime, socket, math
+import os, sys, json, datetime, socket, math, stat, re, shutil, filecmp
+
 
 from qgis.PyQt.QtCore import (
   QCoreApplication, Qt,
@@ -241,6 +242,39 @@ class GimpSelectionFeature(QObject):
         'crs': QgsCoordinateReferenceSystem('EPSG:4326')
       }
 
+    def setExistsPluginGimp():
+      def getExistsDir(srcDir, mask):
+        existsDir = None
+        for root, dirs, files in os.walk( srcDir ):
+          if re.match( mask, root.replace('\\', '/'), re.IGNORECASE ):
+            existsDir = root
+            break
+        return existsDir
+
+      def copyNewPlugin( srcFile, toFile ):
+        shutil.copy2( srcFile, toFile )
+        if sys.platform != 'win32': # Add executable
+          st =  os.stat( toFile )
+          os.chmod( toFile, st.st_mode | stat.S_IEXEC )
+
+      srcDir = os.path.expanduser('~') + '/.config/GIMP'
+      nameDir = "plug-ins"
+      mask = r".+[0-9]+\.[0-9]+/{}".format( nameDir )
+      dirPluginGimp = getExistsDir( srcDir, mask )
+      if dirPluginGimp is None:
+        args = ( srcDir, nameDir )
+        msg = "Not found '{}' or '{}' subdirectory inside"
+        msg = QCoreApplication.translate('GimpSelectionFeature', msg )
+        msg = msg.format( *args)
+        return { 'isOk': False, 'message': msg }
+
+      namePlugin = 'socket_server_selection.py'
+      srcFile = os.path.join( os.path.dirname(__file__), namePlugin )
+      toFile = os.path.join( dirPluginGimp, namePlugin )
+      if not os.path.exists( toFile ) or not filecmp.cmp( srcFile, toFile ):
+        copyNewPlugin( srcFile, toFile )
+      return { 'isOk': True }
+
     super().__init__()
     self.dockWidgetGui = dockWidgetGui
     self.layerPolygon, self.isIniEditable =  None, None
@@ -257,9 +291,15 @@ class GimpSelectionFeature(QObject):
     self.pathfileImageSelect = os.path.join( dirs['image'], 'tmp_gimp-plugin_sel.tif' )
     self.defLayerPolygon = getDefinitionLayerPolygon( dirs['gpkg'] )
     self.featureAdd = None
-    
-    self._connect()
+
     self.setEnabledWidgetTransfer( False )
+    
+    r = setExistsPluginGimp()
+    if not r['isOk']:
+      self.msgBar.pushMessage( self.nameModulus, r['message'], Qgis.Critical, 0 )
+      return
+
+    self._connect()
 
   def __del__(self):
     if not self.socket is None:
