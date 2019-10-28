@@ -55,7 +55,7 @@ from qgis.core import (
 from osgeo import gdal, ogr, osr
 
 from .json2html import getHtmlTreeMetadata
-from .mapcanvaseffects import MapCanvasEffects
+from .mapcanvaseffects import MapCanvasGeometry
 
 class DockWidgetGimpSelectionFeature(QDockWidget):
   def __init__(self, iface):
@@ -283,7 +283,7 @@ class GimpSelectionFeature(QObject):
     self.socket, self.hasConnect = None, None
     self.canvas, self.msgBar = iface.mapCanvas(), iface.messageBar()
     self.project = QgsProject.instance()
-    self.mapCanvasEffects = MapCanvasEffects()
+    self.mapCanvasEffects = MapCanvasGeometry()
     self.taskManager = QgsApplication.taskManager()
     self.root = self.project.layerTreeRoot()
     dirs = createDirectories()
@@ -291,6 +291,7 @@ class GimpSelectionFeature(QObject):
     self.pathfileImageSelect = os.path.join( dirs['image'], 'tmp_gimp-plugin_sel.tif' )
     self.defLayerPolygon = getDefinitionLayerPolygon( dirs['gpkg'] )
     self.featureAdd = None
+    self.geomsEffect = []
 
     self.setEnabledWidgetTransfer( False )
     
@@ -417,7 +418,8 @@ class GimpSelectionFeature(QObject):
       def setRenderLayer():
         fileStyle = os.path.join( os.path.dirname( __file__ ), "gimpselectionfeature_with_expression.qml" )
         self.layerPolygon.loadNamedStyle( fileStyle )
-        self.mapCanvasEffects.zoom( self.layerPolygon, dataResult['geomBBox'] )
+        self.mapCanvasEffects.flash( self.geomsEffect, self.layerPolygon )
+        del self.geomsEffect[:]
       
       self.msgBar.clearWidgets()
       if exception:
@@ -539,9 +541,11 @@ class GimpSelectionFeature(QObject):
       geom = getGeometryAdjustedBorder( geometry, areaMinInLayer )
     else:
       geom = geometry
-    self.featureAdd.setGeometry( geom)
+    self.featureAdd.setGeometry( geom )
     
     self.layerPolygon.addFeature( self.featureAdd )
+
+    self.geomsEffect.append( QgsGeometry ( geom ) )
 
   @pyqtSlot()
   def sendImageGimp(self):
@@ -844,19 +848,6 @@ class WorkerTaskGimpSelectionFeature(QObject):
       self.addAttributesFeature.emit( atts )
 
     def addGeometries(geoms, areaPixel):
-      def envelopGeoms(envelopGeom, geom):
-        env = list( geom.GetEnvelope() ) #  [ xmin, xmax, ymin, ymax ]
-        if envelopGeom is None:
-          return env
-
-        for id in ( 0, 2 ): # Min
-          if envelopGeom[id] > env[id]:
-            envelopGeom[id] = env[id]
-        for id in ( 1, 3 ): # Max
-          if envelopGeom[id] < env[id]:
-            envelopGeom[id] = env[id]
-
-        return envelopGeom
 
       layerPolygon = self.paramProcess['layerPolygon']
       srsLayerPolygon = osr.SpatialReference()
@@ -864,15 +855,12 @@ class WorkerTaskGimpSelectionFeature(QObject):
 
       p_iter = self.paramProcess['smooth']['iter']
       p_offset = self.paramProcess['smooth']['offset']
-      envelopGeom = None # [ xmin, xmax, ymin, ymax ]
       for geom in geoms:
         geom.TransformTo( srsLayerPolygon )
-        envelopGeom = envelopGeoms( envelopGeom, geom )
         geomLayer = QgsGeometry.fromWkt( geom.ExportToWkt() ).smooth( p_iter, p_offset )
         geom.Destroy()
         self.addGeometryFeature.emit( geomLayer, areaPixel )
         del geomLayer
-      return envelopGeom
 
     process = 'getFeatures'
     r = self.getDataServer()
@@ -906,16 +894,14 @@ class WorkerTaskGimpSelectionFeature(QObject):
       msg = QCoreApplication.translate('GimpSelectionFeature', "Not found features in selections ('{}')")
       msg = msg.format( self.paramProcess['pathfileImageSelect'] )
       return self.getErrorReturn( msg, process )
-    envelopGeom = addGeometries( geoms, areaPixel )
+    addGeometries( geoms, areaPixel )
     msg = QCoreApplication.translate('GimpSelectionFeature', "Added {} features in '{}'")
     msg = msg.format( totalFeats, self.paramProcess['layerPolygon'].name() )
-    geomBBox = QgsGeometry.fromRect( QgsRectangle( envelopGeom[0], envelopGeom[2], envelopGeom[1], envelopGeom[3] ) )
     return {
       'isOk': True,
       'message': msg,
       'level': Qgis.Info,
-      'process': 'getFeatures',
-      'geomBBox': geomBBox
+      'process': 'getFeatures'
     }
 
   def sendImageGimp(self):
