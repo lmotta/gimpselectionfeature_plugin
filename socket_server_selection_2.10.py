@@ -7,6 +7,7 @@ Description          : Plugin for enable service for save selected regions and a
 Date                 : June, 2016
 copyright            : (C) 2016 by Luiz Motta
 email                : motta.luiz@gmail.com
+Gimp version         : 2.10
 
  ***************************************************************************/
 
@@ -52,13 +53,14 @@ class SocketService(object):
     try:
       self.sock.bind( ( '127.0.0.1', self.port ) )
     except socket.error as msg_socket:
-      msg = "Socket Error: %s" % str( msg_socket )
-      gimp.message( "%s: %s!" % ( self.titleServer, msg ) )
+      msg = "Socket Error: {}".format( str( msg_socket ) )
+      msg = "{}: {}!".format( self.titleServer, msg )
+      gimp.message( msg  )
       self.quit()
       return
     self.sock.listen( 1 )
-
-    gimp.message( "'%s' is running..." % self.titleServer )
+    msg = "'{}' is running...".format( self.titleServer )
+    gimp.message( msg  )
     gimp_shelf['socket_server'] = True  
 
     self.conn, client = self.sock.accept()
@@ -69,7 +71,8 @@ class SocketService(object):
         break
 
       try:
-        data = json.loads( sdata )
+        data = json.loads( sdata )  
+
       except ValueError:
         continue
 
@@ -152,12 +155,14 @@ class SocketService(object):
       return
 
     non_empty, x1, y1, x2, y2 = pdb.gimp_selection_bounds( image )
-    selimage = image.selection.image.duplicate()
-    selimage.crop( x2 - x1, y2 - y1, x1, y1 )
-    pdb.gimp_selection_sharpen( selimage )
-    channel = pdb.gimp_selection_save( selimage )
-    pdb.file_tiff_save( selimage, channel, self.pathfileImageSelect, "", 0)
-    pdb.gimp_image_delete( selimage )
+    sel_image = image.duplicate()
+    sel_image.crop( x2 - x1, y2 - y1, x1, y1 )
+    pdb.gimp_selection_sharpen( sel_image )
+    channel = pdb.gimp_selection_save( sel_image )
+    sel_layer = pdb.gimp_selection_float( channel, 0, 0 ) # Add selection how top layer 
+    pdb.gimp_image_remove_layer( sel_image, sel_image.layers[-1] ) # Remove original layer
+    pdb.file_tiff_save( sel_image, sel_layer, self.pathfileImageSelect, '', 0)
+    pdb.gimp_image_delete( sel_image )
     #
     data = {
       'isOk': True,
@@ -167,7 +172,8 @@ class SocketService(object):
     self.conn.send( json.dumps( data ) )
 
   def quit(self):
-    gimp.message( "%s: Stopped!" % self.titleServer)
+    msg = "'{}' Stopped!".format( self.titleServer )
+    gimp.message( msg  )
     gimp_shelf['socket_server'] = False
     self.conn = None
 
@@ -175,7 +181,8 @@ class SocketService(object):
 def run():
   
   if gimp_shelf.has_key('socket_server') and gimp_shelf['socket_server']:
-    gimp.message( "WARNING: '%s' is already running!" % SocketService.titleServer)
+    msg = "WARNING: '{}' is already running!".format( SocketService.titleServer )
+    gimp.message( msg  )
     return
 
   SocketService().run()

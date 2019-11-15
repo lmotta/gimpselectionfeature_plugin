@@ -9,12 +9,12 @@
         <translation>Adicionando uma área selecionada no GIMP como uma feição num shapefile</translation>
     </message>
     <message>
-        <location filename="../gimpselectionfeature.py" line="705"/>
+        <location filename="../gimpselectionfeature.py" line="704"/>
         <source>Error connection GIMP Server: {}. Run IBAMA plugin in GIMP</source>
         <translation>Erro de conexão com o serviço do GIMP: {}. Rode o plugin no GIMP</translation>
     </message>
     <message>
-        <location filename="../gimpselectionfeature.py" line="711"/>
+        <location filename="../gimpselectionfeature.py" line="710"/>
         <source>Run IBAMA Plugin, &apos;IBAMA/Service for save the selected regions&apos;, in GIMP!</source>
         <translation>Execute o Plugin do IBAMA, &apos;
 IBAMA/Service for save the selected regions&apos;, no GIMP!</translation>
@@ -30,7 +30,7 @@ IBAMA/Service for save the selected regions&apos;, no GIMP!</translation>
         <translation type="obsolete">Criando feições no QGIS...</translation>
     </message>
     <message>
-        <location filename="../gimpselectionfeature.py" line="910"/>
+        <location filename="../gimpselectionfeature.py" line="893"/>
         <source>Added {} features in &apos;{}&apos;</source>
         <translation>Adicionado {} feições no &apos;{}&apos;</translation>
     </message>
@@ -40,7 +40,7 @@ IBAMA/Service for save the selected regions&apos;, no GIMP!</translation>
         <translation type="obsolete">Enviando imagem para o GIMP</translation>
     </message>
     <message>
-        <location filename="../gimpselectionfeature.py" line="967"/>
+        <location filename="../gimpselectionfeature.py" line="946"/>
         <source>ERROR in Script</source>
         <translation>ERRO no script</translation>
     </message>
@@ -105,12 +105,12 @@ IBAMA/Service for save the selected regions&apos;, no GIMP!</translation>
         <translation>Transfere</translation>
     </message>
     <message>
-        <location filename="../gimpselectionfeature.py" line="181"/>
+        <location filename="../gimpselectionfeature.py" line="196"/>
         <source>Visibles Images(total {})</source>
-        <translation type="obsolete">Imagens visíveis(total{})</translation>
+        <translation>Imagens visíveis(total {})</translation>
     </message>
     <message>
-        <location filename="../gimpselectionfeature.py" line="635"/>
+        <location filename="../gimpselectionfeature.py" line="634"/>
         <source>Add features...</source>
         <translation>Adiciona feições...</translation>
     </message>
@@ -125,12 +125,12 @@ IBAMA/Service for save the selected regions&apos;, no GIMP!</translation>
         <translation>Anotação:</translation>
     </message>
     <message>
-        <location filename="../gimpselectionfeature.py" line="567"/>
+        <location filename="../gimpselectionfeature.py" line="566"/>
         <source>Sending image to GIMP...</source>
         <translation>Enviando a imagem para o GIMP...</translation>
     </message>
     <message>
-        <location filename="../gimpselectionfeature.py" line="906"/>
+        <location filename="../gimpselectionfeature.py" line="889"/>
         <source>Not found features in selections (&apos;{}&apos;)</source>
         <translation>Não encontrada feições nas seleções(&apos;{}&apos;)</translation>
     </message>
@@ -140,11 +140,6 @@ IBAMA/Service for save the selected regions&apos;, no GIMP!</translation>
         <translation>Ajusta as bordas</translation>
     </message>
     <message>
-        <location filename="../gimpselectionfeature.py" line="196"/>
-        <source>Visibles Images(total  {})</source>
-        <translation>Imagens visíveis</translation>
-    </message>
-    <message>
         <location filename="../gimpselectionfeature.py" line="471"/>
         <source>Adjusting the Borders...</source>
         <translation>Ajustando as bordas...</translation>
@@ -152,7 +147,7 @@ IBAMA/Service for save the selected regions&apos;, no GIMP!</translation>
     <message>
         <location filename="../gimpselectionfeature.py" line="266"/>
         <source>Not found GIMP 2.10.x &apos;{}&apos; subdirectory inside &apos;{}&apos;</source>
-        <translation type="unfinished">Não foi encontrado o subdiretório GIMP 2.10.x &apos;{}&apos; dentro do &apos;{}&apos;</translation>
+        <translation type="obsolete">Não foi encontrado o subdiretório GIMP 2.10.x &apos;{}&apos; dentro do &apos;{}&apos;</translation>
     </message>
 </context>
 </TS>

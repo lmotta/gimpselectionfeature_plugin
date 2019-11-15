@@ -7,6 +7,7 @@ Description          : Plugin for enable service for save selected regions and a
 Date                 : June, 2016
 copyright            : (C) 2016 by Luiz Motta
 email                : motta.luiz@gmail.com
+Gimp version         : 2.8
 
  ***************************************************************************/
 

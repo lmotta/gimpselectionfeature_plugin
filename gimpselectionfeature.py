@@ -193,7 +193,7 @@ class DockWidgetGimpSelectionFeature(QDockWidget):
 
     super().__init__( "Gimp Selection Feature", iface.mainWindow() )
     #
-    msg = QCoreApplication.translate('GimpSelectionFeature', 'Visibles Images(total  {})')
+    msg = QCoreApplication.translate('GimpSelectionFeature', 'Visibles Images(total {})')
     self.formatTitleImages = msg
     setupUi()
     self.gsf = GimpSelectionFeature( iface, self )
@@ -243,36 +243,47 @@ class GimpSelectionFeature(QObject):
       }
 
     def setExistsPluginGimp():
-      def getExistsDir(srcDir, mask):
-        existsDir = None
+      def getDirectories(srcDir, mask, totalSearch):
+        findedDir = []
         for root, dirs, files in os.walk( srcDir ):
           if re.match( mask, root.replace('\\', '/'), re.IGNORECASE ):
-            existsDir = root
-            break
-        return existsDir
+            findedDir.append( root )
+            if len( findedDir ) == totalSearch:
+              break
+        return findedDir
 
-      def copyNewPlugin( srcFile, toFile ):
-        shutil.copy2( srcFile, toFile )
+      def msgError(dirPlugin):
+          msg = "Not found profile Gimp(2.8 2.10) or '{}' inside profile"
+          msg = QCoreApplication.translate('GimpSelectionFeature', msg )
+          msg = msg.format( dirPlugin )
+          return msg
+
+      def getNameGimpPlugin(dirPluginGimp):
+        versionGimp = '2.10' if '2.10' in dirPluginGimp else '2.8'
+        name = 'socket_server_selection_{}.py'.format( versionGimp )
+        return name
+
+      def copyNewPlugin( fromFile, toFile ):
+        shutil.copy2( fromFile, toFile )
         if sys.platform != 'win32': # Add executable
           st =  os.stat( toFile )
           os.chmod( toFile, st.st_mode | stat.S_IEXEC )
 
-      srcDir = os.path.expanduser('~') + '/.config/GIMP'
-      nameDir = "plug-ins"
-      mask = r".+[0-9]+\.[0-9]+/{}".format( nameDir )
-      dirPluginGimp = getExistsDir( srcDir, mask )
-      if dirPluginGimp is None:
-        args = ( srcDir, nameDir )
-        msg = "Not found '{}' or '{}' subdirectory inside"
-        msg = QCoreApplication.translate('GimpSelectionFeature', msg )
-        msg = msg.format( *args)
-        return { 'isOk': False, 'message': msg }
-
-      namePlugin = 'socket_server_selection.py'
-      srcFile = os.path.join( os.path.dirname(__file__), namePlugin )
-      toFile = os.path.join( dirPluginGimp, namePlugin )
-      if not os.path.exists( toFile ) or not filecmp.cmp( srcFile, toFile ):
-        copyNewPlugin( srcFile, toFile )
+      # Search GIMP 2.8 and 2.10
+      totalSearch = 2
+      dirUser = os.path.expanduser('~')
+      dirPlugin = "plug-ins"
+      mask = r".+/\.?GIMP.2\.[81]0?/{}".format( dirPlugin )
+      dirsPluginGimp = getDirectories( dirUser, mask, totalSearch )
+      if len( dirsPluginGimp ) == 0:
+        return { 'isOk': False, 'message': msgError( dirPlugin ) }
+      
+      for item in dirsPluginGimp:
+        name = getNameGimpPlugin( item )
+        fromFile = os.path.join( os.path.dirname(__file__), name )
+        toFile = os.path.join( item, 'socket_server_selection.py' )
+        if not os.path.exists( toFile ) or not filecmp.cmp( fromFile, toFile ):
+          copyNewPlugin( fromFile, toFile )
       return { 'isOk': True }
 
     super().__init__()
@@ -376,8 +387,6 @@ class GimpSelectionFeature(QObject):
         hasImages = True
     
     title = self.dockWidgetGui.formatTitleImages.format( totalImages )
-    if not self.layerPolygon is None and totalImages > 0 and self.project.layerTreeRoot().findLayer( self.layerPolygon.id() ).isVisible():
-      title = f"{title} and {self.layerPolygon.name()}"
     self.dockWidgetGui.gbxImage.setTitle( title )
     self.dockWidgetGui.lblLegendImages.setText( txtLegend )
     self.dockWidgetGui.btnSendImage.setEnabled( hasImages )
@@ -444,8 +453,6 @@ class GimpSelectionFeature(QObject):
 
     self.setEnabledWidgetTransfer( False )
     task = QgsTask.fromFunction('GimpSelectionFeature Task', run, dataRun, on_finished=finished )
-    if not self.layerPolygon is None:
-      task.setDependentLayers( [ self.layerPolygon ] )
     self.taskManager.addTask( task )
 
   @pyqtSlot('QDomDocument')
@@ -464,7 +471,7 @@ class GimpSelectionFeature(QObject):
     if not self.layerPolygon is None and self.layerPolygon.id() == sIdLayer:
       self.layerPolygon = None
     
-    if self.layerPolygon is None or sIdLayer in map( lambda lyr: lyr.id(), self.layerImages ):
+    if sIdLayer in map( lambda lyr: lyr.id(), self.layerImages ):
       self.setLegendImages()
 
   @pyqtSlot(dict)
@@ -565,9 +572,6 @@ class GimpSelectionFeature(QObject):
         'pathfileImage': self.pathfileImage
       }
     }
-    if not self.layerPolygon is None and self.project.layerTreeRoot().findLayer( self.layerPolygon.id() ).isVisible():
-      data['paramProcess']['layerPolygon'] = self.layerPolygon
-
     msg = QCoreApplication.translate('GimpSelectionFeature', 'Sending image to GIMP...')
     self.msgBar.pushMessage( self.nameModulus, msg, Qgis.Info )
     self.runTask( data )
@@ -933,8 +937,6 @@ class WorkerTaskGimpSelectionFeature(QObject):
       settings.setBackgroundColor( QColor( Qt.transparent ) )
       
       layers = self.paramProcess['layerImages']
-      if 'layerPolygon' in self.paramProcess:
-        layers = [ self.paramProcess['layerPolygon'] ] + layers
       settings.setLayers( layers )
       job = QgsMapRendererParallelJob( settings ) 
       job.start()
