@@ -50,7 +50,7 @@ class GimpSelectionFeaturePlugin(QObject):
 
   def initGui(self):
     name = "Gimp Selection Feature"
-    about = QCoreApplication.translate('GimpSelectionFeature', 'Adding selected area in GIMP how a feature in shapefile')
+    about = QCoreApplication.translate('GimpSelectionFeature', 'Adding selected area in GIMP how a feature')
     icon = QIcon( os.path.join( os.path.dirname(__file__), 'gimpselectionfeature.svg' ) )
     self.action = QAction( icon, name, self.iface.mainWindow() )
     self.action.setObjectName( name.replace(' ', '') )
@@ -71,7 +71,6 @@ class GimpSelectionFeaturePlugin(QObject):
     self.iface.removePluginRasterMenu( self.name, self.action )
 
     self.dock.close()
-    #del self.dock
     self.dock.clean()
     self.dock = None
 

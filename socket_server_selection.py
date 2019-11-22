@@ -147,7 +147,7 @@ class Service(object):
             socket.send( json.dumps( data ) )
             return
 
-        non_empty, x1, y1, x2, y2 = pdb.gimp_selection_bounds( image )
+        _non_empty, x1, y1, x2, y2 = pdb.gimp_selection_bounds( image )
         # Verify Version
         sel_image = image.duplicate() if self.isVersion2_10 else image.selection.image.duplicate()
         #
