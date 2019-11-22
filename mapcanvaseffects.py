@@ -37,19 +37,6 @@ class  MapCanvasGeometry():
         self.project = QgsProject().instance()
         self.canvas = QgsUtils.iface.mapCanvas()
 
-    def _flash(self, milliseconds):
-        def finished():
-            self.timer.stop()
-            self.timer.timeout.disconnect( finished )
-            if self.layer is None:
-                self.canvasItem.reset( self.geometryType )
-            self.canvasItem = None
-            self.layer = None
-            self.geometryType = None
-
-        self.timer.timeout.connect( finished )
-        self.timer.start( milliseconds )
-
     def flash(self, geometries, layer=None):
         if layer is None:
             self.canvas.flashGeometries( geometries )

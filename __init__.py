@@ -71,7 +71,8 @@ class GimpSelectionFeaturePlugin(QObject):
     self.iface.removePluginRasterMenu( self.name, self.action )
 
     self.dock.close()
-    del self.dock
+    #del self.dock
+    self.dock.clean()
     self.dock = None
 
     del self.action
