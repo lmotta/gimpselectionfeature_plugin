@@ -6,8 +6,8 @@ about:This plugin create a polygon layer, where, yours feature can come from sel
   http://www.ibama.gov.br
   Tested with GIMP 2.10
 
-version:1.4
-qgisMinimumVersion:3.2
+version:1.5
+qgisMinimumVersion:3.4
 
 author:Luiz Motta
 email:motta.luiz@gmail.com
@@ -25,7 +25,9 @@ icon:gimpselectionfeature.svg
 experimental:False
 deprecated:False
 
-changelog:1.4(2019-02-15)
+changelog:1.5(2019-11-27)
+  Added flash and refactored(hard)
+  - 1.4(2019-02-15)
   Added adjust borders
   - 1.3(2019-02-08)
   Create self.taskManager for Add task

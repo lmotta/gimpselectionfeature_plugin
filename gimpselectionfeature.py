@@ -247,11 +247,15 @@ class GimpSelectionFeature(QObject):
             copyFiles = ('socket_server_selection.py', 'sockets.py')
             s = QSettings()
             dirsPluginGimp = s.value( self.localSetting.format('dirsPluginGimp'), None )
-            if not dirsPluginGimp is None and os.path.isdir( dirsPluginGimp ):
-                for d in dirsPluginGimp:
-                    for f in copyFiles:
-                        copyNewPlugin( dirPluginQgis, d, f )
-            else:
+            if not dirsPluginGimp is None:
+                existsDirs = [ os.path.isdir( d ) for d in dirsPluginGimp ]
+                if False in existsDirs:
+                    dirsPluginGimp = None
+                else:
+                    for d in dirsPluginGimp:
+                        for f in copyFiles:
+                            copyNewPlugin( dirPluginQgis, d, f )
+            if dirsPluginGimp is None:
                 # Search GIMP 2.8 and 2.10
                 totalSearch = 2
                 dirUser = os.path.expanduser('~')
