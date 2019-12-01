@@ -24,11 +24,8 @@ __date__ = '2019-01-31'
 __copyright__ = '(C) 2019, Luiz Motta'
 __revision__ = '$Format:%H$'
 
-from qgis.PyQt.QtCore import QTimer
-from qgis.PyQt.QtGui import QColor
-
 from qgis import utils as QgsUtils
-from qgis.core import QgsProject, QgsCoordinateTransform, QgsFeature
+from qgis.core import QgsProject, QgsCoordinateTransform
 
 
 class  MapCanvasGeometry():
