@@ -29,7 +29,6 @@ from qgis.PyQt.QtGui import QColor
 
 from qgis import utils as QgsUtils
 from qgis.core import QgsProject, QgsCoordinateTransform, QgsFeature
-from qgis.gui import QgsHighlight, QgsRubberBand
 
 
 class  MapCanvasGeometry():
