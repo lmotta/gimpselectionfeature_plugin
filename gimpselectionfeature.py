@@ -898,7 +898,7 @@ class TaskGetFeatures(TaskBaseGimp):
             p_offset = self.paramsProcess['smooth']['offset']
             for geom in geoms:
                 _geom = QgsGeometry.fromWkt( geom.ExportToIsoWkt() )
-                geom.Destroy() # OGR
+                geom = None
                 _geom.transform( ct )
                 geomLayer = _geom.smooth( p_iter, p_offset )
                 del _geom

@@ -12,6 +12,8 @@ Plugin for adding selected area in GIMP how a feature in polygon layer.
 Luiz Motta
 
 ## Changelog
+- 2020-10-12
+Fixed get features
 - 2019-11-27
 Added flash and refactored(hard)
 -2019-02-15

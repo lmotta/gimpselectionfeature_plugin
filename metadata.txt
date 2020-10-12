@@ -4,10 +4,10 @@ description:Plugin for adding selected area in GIMP how a feature in polygon lay
 about:This plugin create a polygon layer, where, yours feature can come from selected area in GIMP.
   This plugin is developed on the demand of IBAMA(Brazilian Institute of Environment and Renewable Natural Resources)
   http://www.ibama.gov.br
-  Tested with GIMP 2.10
+  Tested with GIMP 2.10.22(Ubuntu)
 
-version:1.5
-qgisMinimumVersion:3.4
+version:1.6
+qgisMinimumVersion:3.10
 
 author:Luiz Motta
 email:motta.luiz@gmail.com
@@ -25,7 +25,9 @@ icon:gimpselectionfeature.svg
 experimental:False
 deprecated:False
 
-changelog:1.5(2019-11-27)
+changelog: 1.6(2020-10-12)
+  Fixed get features. Removed Geometry.Destroy
+  - 1.5(2019-11-27)
   Added flash and refactored(hard)
   - 1.4(2019-02-15)
   Added adjust borders
